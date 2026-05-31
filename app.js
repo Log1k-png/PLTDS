@@ -1,6 +1,6 @@
 /* ===== Constants ===== */
 const API_BASE = 'https://api.latabledessavoirs.fr';
-const STORAGE_KEY = 'pltds_leaderboard_v3';
+const STORAGE_KEY = 'pltds_tracked_v4';
 const DIFFICULTIES = ['facile', 'difficile'];
 const DISPLAY_NAMES = { facile: 'Niveau Abordable', difficile: 'Niveau Expert' };
 
@@ -9,6 +9,7 @@ let currentSeason = null;
 let activeSeason = null;
 let allSeasons = [];
 let networkDown = false;
+let liveScores = {}; // In-memory only: { seasonNumber: { username: { facile, difficile } } }
 
 /* ===== DOM Elements ===== */
 const els = {
@@ -44,6 +45,24 @@ const tables = {
     body: document.getElementById('expert-body'),
   },
 };
+
+/* ===== Storage (tracked usernames only) ===== */
+function loadTracked() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) return data;
+    if (data.tracked && Array.isArray(data.tracked)) return data.tracked;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTracked(tracked) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ tracked }));
+}
 
 /* ===== API Helpers ===== */
 async function apiGet(path, params = {}) {
@@ -88,62 +107,78 @@ async function searchLeaderboard(season, difficulty, query) {
   return apiGet(`/leaderboards/season/${season}/${difficulty}/search`, { q: query });
 }
 
-/* ===== Storage ===== */
-function loadData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : { tracked: [], seasons: {} };
-  } catch {
-    return { tracked: [], seasons: {} };
+/* ===== Live Score Fetching ===== */
+async function fetchPlayerScores(username, season) {
+  const result = { username, facile: null, difficile: null };
+  for (const diff of DIFFICULTIES) {
+    try {
+      const list = await searchLeaderboard(season, diff, username);
+      if (Array.isArray(list) && list.length > 0) {
+        result[diff] = { score: list[0].score, rank: list[0].rank };
+      }
+    } catch (err) {
+      console.warn(`Fetch failed for ${username}/${diff}:`, err);
+    }
   }
+  return result;
 }
 
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-function getSeasonCache(data, season) {
-  return data.seasons[season] || {};
-}
-
-function setPlayerScore(data, username, season, difficulty, entry) {
-  if (!data.seasons[season]) data.seasons[season] = {};
-  if (!data.seasons[season][username]) {
-    data.seasons[season][username] = { username, facile: null, difficile: null };
+async function fetchAllTrackedScores(season) {
+  const tracked = loadTracked();
+  if (tracked.length === 0) {
+    liveScores[season] = {};
+    return;
   }
-  data.seasons[season][username][difficulty] = { score: entry.score, rank: entry.rank };
+
+  showSpinner(`Chargement des scores pour la saison ${season}…`);
+  liveScores[season] = {};
+
+  for (let i = 0; i < tracked.length; i++) {
+    const username = tracked[i];
+    updateSpinnerProgress(
+      `Chargement des scores… ${i + 1}/${tracked.length}`,
+      i + 1,
+      tracked.length
+    );
+    const scores = await fetchPlayerScores(username, season);
+    liveScores[season][username] = scores;
+  }
+
+  hideSpinner();
 }
 
-function getPlayerScore(data, username, season) {
-  const seasonCache = getSeasonCache(data, season);
-  return seasonCache[username] || null;
+/* ===== Data Mutation ===== */
+function addTrackedUsername(username) {
+  const tracked = loadTracked();
+  if (!tracked.includes(username)) {
+    tracked.push(username);
+    saveTracked(tracked);
+  }
 }
 
 function removeTrackedPlayer(username) {
-  const data = loadData();
-  data.tracked = data.tracked.filter(u => u !== username);
-  Object.keys(data.seasons).forEach(season => {
-    if (data.seasons[season][username]) {
-      delete data.seasons[season][username];
-    }
+  const tracked = loadTracked().filter(u => u !== username);
+  saveTracked(tracked);
+  Object.values(liveScores).forEach(cache => {
+    if (cache[username]) delete cache[username];
   });
-  saveData(data);
   renderAllTables();
 }
 
 function clearAll() {
   if (!confirm('Voulez-vous vraiment vider votre liste de joueurs ?')) return;
-  saveData({ tracked: [], seasons: {} });
+  saveTracked([]);
+  liveScores = {};
   renderAllTables();
 }
 
-function addPlayer(entry, difficulty) {
-  const data = loadData();
-  if (!data.tracked.includes(entry.username)) {
-    data.tracked.push(entry.username);
-  }
-  setPlayerScore(data, entry.username, activeSeason, difficulty, entry);
-  saveData(data);
+async function addPlayer(entry, difficulty) {
+  addTrackedUsername(entry.username);
+
+  if (!liveScores[activeSeason]) liveScores[activeSeason] = {};
+  const scores = await fetchPlayerScores(entry.username, activeSeason);
+  liveScores[activeSeason][entry.username] = scores;
+
   renderAllTables();
 }
 
@@ -194,11 +229,11 @@ function renderResults(resultsMap) {
 }
 
 function getSortedTrackedForSeason(season) {
-  const data = loadData();
-  const tracked = data.tracked;
+  const tracked = loadTracked();
+  const seasonCache = liveScores[season] || {};
+
   const players = tracked.map(username => {
-    const info = getPlayerScore(data, username, season);
-    return info || { username, facile: null, difficile: null };
+    return seasonCache[username] || { username, facile: null, difficile: null };
   });
 
   return {
@@ -222,8 +257,7 @@ function getSortedTrackedForSeason(season) {
 }
 
 function renderDifficultyTable(difficulty) {
-  const data = loadData();
-  const tracked = data.tracked;
+  const tracked = loadTracked();
 
   const t = tables[difficulty];
   if (tracked.length === 0) {
@@ -262,13 +296,13 @@ function renderDifficultyTable(difficulty) {
 }
 
 function renderBoardStats() {
-  const data = loadData();
-  const seasonCache = getSeasonCache(data, activeSeason);
+  const tracked = loadTracked();
+  const seasonCache = liveScores[activeSeason] || {};
 
   function calcStats(difficulty) {
     let count = 0;
     let sum = 0;
-    data.tracked.forEach(username => {
+    tracked.forEach(username => {
       const p = seasonCache[username];
       if (p && p[difficulty] && p[difficulty].score != null) {
         count++;
@@ -285,8 +319,7 @@ function renderBoardStats() {
 }
 
 function renderPlayerManager() {
-  const data = loadData();
-  const tracked = data.tracked;
+  const tracked = loadTracked();
   els.playerList.innerHTML = '';
 
   if (tracked.length === 0) {
@@ -403,47 +436,9 @@ function hideSpinner() {
   }
 }
 
-/* ===== Auto-refresh on season switch ===== */
-async function refreshTrackedForSeason(season) {
-  const data = loadData();
-  const tracked = data.tracked;
-  if (tracked.length === 0) return;
-
-  const seasonCache = getSeasonCache(data, season);
-  const missing = tracked.filter(u => !seasonCache[u]);
-  if (missing.length === 0) return;
-
-  showSpinner(`Mise à jour des scores pour la saison ${season}…`);
-  let updated = 0;
-
-  for (let i = 0; i < missing.length; i++) {
-    const username = missing[i];
-    updateSpinnerProgress(
-      `Mise à jour des scores… ${i + 1}/${missing.length}`,
-      i + 1,
-      missing.length
-    );
-    for (const diff of DIFFICULTIES) {
-      try {
-        const list = await searchLeaderboard(season, diff, username);
-        if (Array.isArray(list) && list.length > 0) {
-          setPlayerScore(data, username, season, diff, list[0]);
-          updated++;
-        }
-      } catch (err) {
-        console.warn(`Refresh failed for ${username} / ${diff}:`, err);
-      }
-    }
-  }
-
-  if (updated > 0) saveData(data);
-  hideSpinner();
-}
-
 /* ===== Share ===== */
 function generateShareUrl() {
-  const data = loadData();
-  const tracked = data.tracked;
+  const tracked = loadTracked();
   if (tracked.length === 0) return null;
   const url = new URL(window.location.href);
   url.search = '';
@@ -473,7 +468,7 @@ async function autoLoadFromUrl() {
   }
 
   showSpinner(`Chargement de ${usernames.length} joueur(s)…`);
-  const data = loadData();
+  const tracked = loadTracked();
   let added = 0;
 
   for (let i = 0; i < usernames.length; i++) {
@@ -483,23 +478,16 @@ async function autoLoadFromUrl() {
       i + 1,
       usernames.length
     );
-    if (!data.tracked.includes(username)) {
-      data.tracked.push(username);
+    if (!tracked.includes(username)) {
+      tracked.push(username);
       added++;
     }
-    for (const diff of DIFFICULTIES) {
-      try {
-        const list = await searchLeaderboard(activeSeason, diff, username);
-        if (Array.isArray(list) && list.length > 0) {
-          setPlayerScore(data, username, activeSeason, diff, list[0]);
-        }
-      } catch (err) {
-        console.warn(`Auto-load failed for ${username} / ${diff}:`, err);
-      }
-    }
+    if (!liveScores[activeSeason]) liveScores[activeSeason] = {};
+    const scores = await fetchPlayerScores(username, activeSeason);
+    liveScores[activeSeason][username] = scores;
   }
 
-  saveData(data);
+  saveTracked(tracked);
   renderAllTables();
   hideSpinner();
   setStatus(`${usernames.length} joueur(s) chargé(s).`, 'success');
@@ -552,7 +540,7 @@ function goToPrevSeason() {
     activeSeason = sorted[idx - 1].number;
     updateSeasonNav();
     renderAllTables();
-    refreshTrackedForSeason(activeSeason).then(() => renderAllTables());
+    fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
   }
 }
 
@@ -563,46 +551,58 @@ function goToNextSeason() {
     activeSeason = sorted[idx + 1].number;
     updateSeasonNav();
     renderAllTables();
-    refreshTrackedForSeason(activeSeason).then(() => renderAllTables());
+    fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
   }
 }
 
 /* ===== Migration ===== */
 function migrateOldStorage() {
   try {
+    // v3 format: { tracked: [], seasons: {} }
+    const v3 = localStorage.getItem('pltds_leaderboard_v3');
+    if (v3) {
+      const old = JSON.parse(v3);
+      let tracked = [];
+      if (old.tracked && Array.isArray(old.tracked) && old.tracked.length > 0) {
+        tracked = old.tracked;
+      } else if (old.seasons) {
+        Object.values(old.seasons).forEach(seasonCache => {
+          Object.keys(seasonCache).forEach(username => {
+            if (!tracked.includes(username)) tracked.push(username);
+          });
+        });
+      }
+      if (tracked.length > 0) saveTracked(tracked);
+      localStorage.removeItem('pltds_leaderboard_v3');
+      return;
+    }
+
+    // v2 format: { "5": { players: {} }, ... }
     const v2 = localStorage.getItem('pltds_leaderboard_v2');
     if (v2) {
       const old = JSON.parse(v2);
-      const data = { tracked: [], seasons: {} };
-      Object.entries(old).forEach(([season, seasonData]) => {
+      const tracked = [];
+      Object.values(old).forEach(seasonData => {
         if (seasonData && seasonData.players) {
-          Object.entries(seasonData.players).forEach(([username, player]) => {
-            if (!data.tracked.includes(username)) data.tracked.push(username);
-            data.seasons[season] = data.seasons[season] || {};
-            data.seasons[season][username] = {
-              username,
-              facile: player.facile,
-              difficile: player.difficile,
-            };
+          Object.keys(seasonData.players).forEach(username => {
+            if (!tracked.includes(username)) tracked.push(username);
           });
         }
       });
-      saveData(data);
+      if (tracked.length > 0) saveTracked(tracked);
       localStorage.removeItem('pltds_leaderboard_v2');
       return;
     }
 
+    // v1 format: { players: {} }
     const v1 = localStorage.getItem('pltds_leaderboard');
     if (v1) {
       const old = JSON.parse(v1);
-      if (old && old.players && !old.seasons) {
-        const data = { tracked: Object.keys(old.players), seasons: {} };
-        if (currentSeason) {
-          data.seasons[currentSeason] = old.players;
-        }
-        saveData(data);
-        localStorage.removeItem('pltds_leaderboard');
+      if (old && old.players) {
+        const tracked = Object.keys(old.players);
+        if (tracked.length > 0) saveTracked(tracked);
       }
+      localStorage.removeItem('pltds_leaderboard');
     }
   } catch (err) {
     console.error('Migration failed', err);
@@ -640,9 +640,11 @@ async function init() {
   }
 
   if (activeSeason) {
+    await fetchAllTrackedScores(activeSeason);
     renderAllTables();
     await autoLoadFromUrl();
-    await refreshTrackedForSeason(activeSeason);
+    updateSeasonNav();
+    await fetchAllTrackedScores(activeSeason);
     renderAllTables();
   }
   hideSpinner();
