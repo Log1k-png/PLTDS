@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>La Table Des Scores</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="site-header">
+      <div class="header-inner">
+        <h1>La Table Des Scores</h1>
+        <p class="tagline">Leaderboard privée pour <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">La Table des Savoirs</a></p>
+        <div class="season-nav">
+          <button id="season-prev" class="season-arrow" aria-label="Saison précédente">&#9664;</button>
+          <span id="season-display" class="season-display">Chargement…</span>
+          <button id="season-next" class="season-arrow" aria-label="Saison suivante">&#9654;</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- Loading Overlay -->
+      <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Chargement des scores…</p>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+      </div>
+
+      <!-- Network Error Banner -->
+      <div id="network-error" class="network-error hidden">
+        <p>Impossible de contacter l'API de La Table des Savoirs.</p>
+        <p class="sub">Vérifiez votre connexion ou réessayez plus tard.</p>
+        <button id="retry-btn" class="btn primary">Réessayer</button>
+      </div>
+
+      <!-- Leaderboards -->
+      <div class="boards">
+        <div class="board">
+          <div class="board-header">
+            <h2>Niveau Abordable</h2>
+            <span id="abordable-stats" class="board-stats"></span>
+          </div>
+          <div id="abordable-empty" class="board-empty">
+            <p>Aucun joueur dans ce classement.</p>
+            <p class="sub">Utilisez la recherche ci-dessous pour ajouter des joueurs.</p>
+          </div>
+          <div id="abordable-table-wrap" class="table-wrap hidden">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-rank">#</th>
+                  <th class="col-user">Pseudo</th>
+                  <th class="col-score">Score</th>
+                  <th class="col-rank-off">Rang</th>
+                </tr>
+              </thead>
+              <tbody id="abordable-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="board">
+          <div class="board-header">
+            <h2>Niveau Expert</h2>
+            <span id="expert-stats" class="board-stats"></span>
+          </div>
+          <div id="expert-empty" class="board-empty">
+            <p>Aucun joueur dans ce classement.</p>
+            <p class="sub">Utilisez la recherche ci-dessous pour ajouter des joueurs.</p>
+          </div>
+          <div id="expert-table-wrap" class="table-wrap hidden">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-rank">#</th>
+                  <th class="col-user">Pseudo</th>
+                  <th class="col-score">Score</th>
+                  <th class="col-rank-off">Rang</th>
+                </tr>
+              </thead>
+              <tbody id="expert-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Section: Search + Player Manager -->
+      <section class="bottom-section">
+        <div class="bottom-card search-part">
+          <h2>Ajouter des joueurs</h2>
+          <p class="sub">Entrez un ou plusieurs pseudonymes (un par ligne ou séparés par des virgules).</p>
+          <textarea id="username-input" rows="4"></textarea>
+          <div class="search-actions">
+            <button id="search-btn" class="btn primary">Rechercher</button>
+            <button id="clear-search-btn" class="btn secondary">Effacer</button>
+          </div>
+          <div id="search-status" class="search-status"></div>
+          <div id="search-results" class="search-results"></div>
+        </div>
+
+        <div class="bottom-card manager-part">
+          <h2>Modifier la liste</h2>
+          <p class="sub">Retirer des joueurs de votre leaderboard.</p>
+          <div id="player-list" class="player-list"></div>
+          <div class="manager-actions">
+            <button id="share-btn" class="btn primary outline">Partager</button>
+            <button id="clear-btn" class="btn danger outline">Tout vider</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Site statique non officiel. Données fournies par l'API de <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">La Table des Savoirs</a>.</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
