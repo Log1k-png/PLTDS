@@ -119,14 +119,6 @@ function getPlayerScore(data, username, season) {
   return seasonCache[username] || null;
 }
 
-function addTrackedPlayer(username) {
-  const data = loadData();
-  if (!data.tracked.includes(username)) {
-    data.tracked.push(username);
-    saveData(data);
-  }
-}
-
 function removeTrackedPlayer(username) {
   const data = loadData();
   data.tracked = data.tracked.filter(u => u !== username);
@@ -147,7 +139,9 @@ function clearAll() {
 
 function addPlayer(entry, difficulty) {
   const data = loadData();
-  addTrackedPlayer(entry.username);
+  if (!data.tracked.includes(entry.username)) {
+    data.tracked.push(entry.username);
+  }
   setPlayerScore(data, entry.username, activeSeason, difficulty, entry);
   saveData(data);
   renderAllTables();
