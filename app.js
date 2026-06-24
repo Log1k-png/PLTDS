@@ -66,7 +66,7 @@ function saveTracked(tracked) {
 
 /* ===== API Helpers ===== */
 async function apiGet(path, params = {}) {
-  const url = new URL(API_BASE + path);
+  const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
