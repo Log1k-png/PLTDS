@@ -593,6 +593,11 @@ textarea:focus {
   margin-top: auto;
 }
 
+.site-footer .footer-links {
+  margin-top: 0.5rem;
+  opacity: 0.75;
+}
+
 /* ===== Utilities ===== */
 .hidden {
   display: none !important;
