@@ -1,5 +1,5 @@
 /* ===== Constants ===== */
-const API_BASE = 'https://api.latabledessavoirs.fr';
+const API_BASE = '/api';
 const STORAGE_KEY = 'pltds_tracked_v4';
 const DIFFICULTIES = ['facile', 'difficile'];
 const DISPLAY_NAMES = { facile: 'Niveau Abordable', difficile: 'Niveau Expert' };
