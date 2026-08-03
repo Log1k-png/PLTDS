@@ -49,22 +49,39 @@ const tables = {
   },
 };
 
-/* ===== Storage (tracked usernames only) ===== */
-function loadTracked() {
+/* ===== Storage (tracked usernames + highlighted player) ===== */
+function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return {};
     const data = JSON.parse(raw);
-    if (Array.isArray(data)) return data;
-    if (data.tracked && Array.isArray(data.tracked)) return data.tracked;
-    return [];
+    if (Array.isArray(data)) return { tracked: data };
+    return data && typeof data === 'object' ? data : {};
   } catch {
-    return [];
+    return {};
   }
 }
 
+function loadTracked() {
+  const state = loadState();
+  return Array.isArray(state.tracked) ? state.tracked : [];
+}
+
 function saveTracked(tracked) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ tracked }));
+  const state = loadState();
+  state.tracked = tracked;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function getHighlighted() {
+  const h = loadState().highlighted;
+  return typeof h === 'string' && h.length > 0 ? h : null;
+}
+
+function setHighlighted(username) {
+  const state = loadState();
+  state.highlighted = username || null;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 /* ===== API Helpers ===== */
@@ -211,6 +228,7 @@ function removeTrackedPlayer(username) {
   if (!confirm(`Retirer ${username} de votre leaderboard ?`)) return;
   const tracked = loadTracked().filter(u => u !== username);
   saveTracked(tracked);
+  if (getHighlighted() === username) setHighlighted(null);
   Object.values(liveScores).forEach(cache => {
     if (cache[username]) delete cache[username];
   });
@@ -220,6 +238,7 @@ function removeTrackedPlayer(username) {
 function clearAll() {
   if (!confirm('Voulez-vous vraiment vider votre liste de joueurs ?')) return;
   saveTracked([]);
+  setHighlighted(null);
   liveScores = {};
   renderAllTables();
 }
@@ -345,9 +364,11 @@ function renderDifficultyTable(difficulty) {
 
   t.empty.classList.add('hidden');
   t.wrap.classList.remove('hidden');
+  t.wrap.classList.toggle('no-days', activeSeason !== currentSeason);
 
   const sorted = getSortedTrackedForSeason(activeSeason)[difficulty];
   t.body.innerHTML = '';
+  const highlighted = getHighlighted();
 
   sorted.forEach((p, idx) => {
     const info = p[difficulty];
@@ -368,11 +389,12 @@ function renderDifficultyTable(difficulty) {
     const yesterdayCell = formatDayCell(yesterdayEntry, false, !yesterdayScores);
 
     const tr = document.createElement('tr');
+    if (p.username === highlighted) tr.classList.add('highlighted');
     if (idx < 3) tr.classList.add(`rank-${idx + 1}`);
 
     tr.innerHTML = `
       <td class="rank-cell">${pos}</td>
-      <td class="user-cell">${escapeHtml(p.username)}</td>
+      <td class="user-cell" data-username="${escapeHtml(p.username)}" title="${escapeHtml(p.username)}">${escapeHtml(p.username)}</td>
       <td class="score-cell">${score}</td>
       <td class="today-cell">${todayCell}</td>
       <td class="yesterday-cell">${yesterdayCell}</td>
@@ -762,6 +784,60 @@ els.seasonNext.addEventListener('click', goToNextSeason);
 els.retryBtn.addEventListener('click', () => {
   els.networkError.classList.add('hidden');
   init();
+});
+
+/* Tap a pseudo to expand/collapse it; long-press (~500ms) to highlight your player */
+const PRESS_MS = 500;
+
+Object.values(tables).forEach(t => {
+  let press = null;
+  let suppressClick = false;
+
+  const cancelPress = () => {
+    if (!press) return;
+    clearTimeout(press.timer);
+    press.cell.classList.remove('pressing');
+    press = null;
+  };
+
+  t.body.addEventListener('pointerdown', e => {
+    const cell = e.target.closest('.user-cell');
+    if (!cell || !cell.dataset.username) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    cancelPress();
+    press = {
+      cell,
+      x: e.clientX,
+      y: e.clientY,
+      timer: setTimeout(() => {
+        const username = press.cell.dataset.username;
+        setHighlighted(getHighlighted() === username ? null : username);
+        suppressClick = true;
+        press = null;
+        renderAllTables();
+      }, PRESS_MS),
+    };
+    cell.classList.add('pressing');
+  });
+
+  t.body.addEventListener('pointermove', e => {
+    if (!press) return;
+    if (Math.abs(e.clientX - press.x) > 10 || Math.abs(e.clientY - press.y) > 10) {
+      cancelPress();
+    }
+  });
+
+  t.body.addEventListener('pointerup', cancelPress);
+  t.body.addEventListener('pointercancel', cancelPress);
+
+  t.body.addEventListener('click', e => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
+    const cell = e.target.closest('.user-cell');
+    if (cell) cell.classList.toggle('expanded');
+  });
 });
 
 /* ===== Start ===== */
