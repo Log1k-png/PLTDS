@@ -11,7 +11,8 @@ let allSeasons = [];
 let networkDown = false;
 let liveScores = {}; // In-memory only: { seasonNumber: { username: { facile, difficile } } }
 let currentDay = null; // Today's day number from /seasons/progress
-let playedToday = null; // { dayNumber, facile: Set, difficile: Set } of usernames who played today
+let todayScores = null; // { dayNumber, facile: Map<username, entry>, difficile: Map<username, entry> }
+let yesterdayScores = null; // same structure for the previous day
 
 /* ===== DOM Elements ===== */
 const els = {
@@ -116,32 +117,45 @@ async function searchLeaderboard(season, difficulty, query) {
   return apiGet(`/leaderboards/season/${season}/${difficulty}/search`, { q: query });
 }
 
-/* ===== Played-Today ===== */
+/* ===== Today / Yesterday Scores ===== */
 async function fetchCurrentDay() {
   const data = await apiGet('/seasons/progress');
   return data.currentDay;
 }
 
-async function fetchDayPlayedSet(dayNumber, difficulty) {
-  const data = await apiGet(`/leaderboards/day/${dayNumber}/${difficulty}/top`, { limit: -1 });
-  return new Set(Array.isArray(data.entries) ? data.entries.map(e => e.username) : []);
+async function fetchDayEntries(dayNumber, difficulty) {
+  const params = { limit: -1 };
+  const tracked = loadTracked();
+  if (tracked.length > 0) params.users = tracked.join(',');
+  const data = await apiGet(`/leaderboards/day/${dayNumber}/${difficulty}/top`, params);
+  return Array.isArray(data.entries) ? data.entries : [];
 }
 
-async function loadPlayedToday() {
-  if (!currentDay) return;
-  if (playedToday && playedToday.dayNumber === currentDay) return;
-
-  const result = { dayNumber: currentDay };
+async function loadDayScores(dayNumber) {
+  const result = { dayNumber };
   await Promise.all(
     DIFFICULTIES.map(async diff => {
       try {
-        result[diff] = await fetchDayPlayedSet(currentDay, diff);
+        const entries = await fetchDayEntries(dayNumber, diff);
+        result[diff] = new Map(entries.map(e => [e.username, e]));
       } catch (err) {
-        console.warn(`Failed to load day ${currentDay} ${diff}:`, err);
+        console.warn(`Failed to load day ${dayNumber} ${diff}:`, err);
       }
     })
   );
-  playedToday = result;
+  return result;
+}
+
+async function loadRecentScores() {
+  if (!currentDay) return;
+  if (todayScores && todayScores.dayNumber === currentDay) return;
+
+  const [today, yesterday] = await Promise.all([
+    loadDayScores(currentDay),
+    loadDayScores(currentDay - 1),
+  ]);
+  todayScores = today;
+  yesterdayScores = yesterday;
 }
 
 /* ===== Live Score Fetching ===== */
@@ -301,6 +315,16 @@ function getSortedTrackedForSeason(season) {
   };
 }
 
+function formatDayCell(entry, isToday) {
+  if (!entry) return '—';
+  const score = entry.score.toLocaleString('fr-FR');
+  const correct = entry.correctCount != null ? `${entry.correctCount}/10` : '';
+  return `<span class="day-cell">
+    <span class="${isToday ? 'today-score' : 'day-score'}">${score}</span>
+    ${correct ? `<span class="day-correct">${correct}</span>` : ''}
+  </span>`;
+}
+
 function renderDifficultyTable(difficulty) {
   const tracked = loadTracked();
 
@@ -326,9 +350,14 @@ function renderDifficultyTable(difficulty) {
           : info.score.toLocaleString('fr-FR'))
       : '—';
     const rank = info ? '#' + info.rank.toLocaleString('fr-FR') : '—';
-    const played = playedToday && playedToday[difficulty]
-      ? playedToday[difficulty].has(p.username)
-      : null;
+
+    const todayMap = todayScores && todayScores[difficulty];
+    const yesterdayMap = yesterdayScores && yesterdayScores[difficulty];
+    const todayEntry = todayMap && todayMap.get(p.username);
+    const yesterdayEntry = yesterdayMap && yesterdayMap.get(p.username);
+
+    const todayCell = formatDayCell(todayEntry, true);
+    const yesterdayCell = formatDayCell(yesterdayEntry, false);
 
     const tr = document.createElement('tr');
     if (idx < 3) tr.classList.add(`rank-${idx + 1}`);
@@ -337,8 +366,9 @@ function renderDifficultyTable(difficulty) {
       <td class="rank-cell">${pos}</td>
       <td class="user-cell">${escapeHtml(p.username)}</td>
       <td class="score-cell">${score}</td>
+      <td class="today-cell">${todayCell}</td>
+      <td class="yesterday-cell">${yesterdayCell}</td>
       <td class="rank-off-cell">${rank}</td>
-      <td class="today-cell">${played ? '<span class="played-today" title="A joué aujourd\'hui">✓</span>' : (played === null ? '—' : '·')}</td>
     `;
     t.body.appendChild(tr);
   });
@@ -698,7 +728,7 @@ async function init() {
 
   try {
     currentDay = await fetchCurrentDay();
-    await loadPlayedToday();
+    await loadRecentScores();
     renderAllTables();
   } catch (err) {
     console.warn('Impossible de charger les infos du jour:', err);

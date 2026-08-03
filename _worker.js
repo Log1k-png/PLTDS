@@ -29,6 +29,38 @@ export default {
         targetUrl.searchParams.set(key, value);
       });
 
+      // Filtre cote serveur : si un parametre `users` est fourni sur un top du jour,
+      // on ne renvoie que les entrees correspondant a ces pseudonymes (reduit la bande passante).
+      const usersParam = url.searchParams.get('users');
+      if (usersParam && apiPath.startsWith('leaderboards/day/') && apiPath.endsWith('/top')) {
+        const wanted = new Set(usersParam.split(',').map(u => u.trim()).filter(Boolean));
+        targetUrl.searchParams.delete('users');
+        try {
+          const resp = await fetch(targetUrl, {
+            headers: { 'Accept': 'application/json' },
+          });
+          const data = await resp.json();
+          const entries = Array.isArray(data.entries)
+            ? data.entries
+                .filter(e => wanted.has(e.username))
+                .map(e => ({ username: e.username, score: e.score, correctCount: e.correctCount }))
+            : [];
+          return new Response(JSON.stringify({
+            dayNumber: data.dayNumber,
+            difficulty: data.difficulty,
+            entries,
+          }), {
+            status: resp.status,
+            headers: { 'content-type': 'application/json', 'cache-control': 'no-cache' },
+          });
+        } catch (err) {
+          return new Response(JSON.stringify({ error: 'Proxy error', message: err.message }), {
+            status: 502,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+      }
+
       const modifiedRequest = new Request(targetUrl, {
         method: request.method,
         headers: {
