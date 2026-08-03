@@ -256,6 +256,18 @@ a:hover {
   white-space: nowrap;
 }
 
+.board-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.copy-feedback {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #34d399;
+}
+
 /* ===== Table ===== */
 .table-wrap {
   overflow-x: auto;
@@ -633,6 +645,11 @@ textarea:focus {
 }
 .btn:active {
   transform: translateY(1px);
+}
+
+.btn.small {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
 }
 
 .btn.primary {

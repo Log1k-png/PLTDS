@@ -62,7 +62,11 @@
         <div class="board">
           <div class="board-header">
             <h2>Niveau Abordable</h2>
-            <span id="abordable-stats" class="board-stats"></span>
+            <span class="board-actions">
+              <span id="abordable-stats" class="board-stats"></span>
+              <button class="btn small copy-board-btn" data-difficulty="facile" title="Copier le classement dans le presse-papiers">Copier</button>
+              <span class="copy-feedback hidden">Copié !</span>
+            </span>
           </div>
           <div id="abordable-empty" class="board-empty">
             <p>Aucun joueur dans ce classement.</p>
@@ -88,7 +92,11 @@
         <div class="board">
           <div class="board-header">
             <h2>Niveau Expert</h2>
-            <span id="expert-stats" class="board-stats"></span>
+            <span class="board-actions">
+              <span id="expert-stats" class="board-stats"></span>
+              <button class="btn small copy-board-btn" data-difficulty="difficile" title="Copier le classement dans le presse-papiers">Copier</button>
+              <span class="copy-feedback hidden">Copié !</span>
+            </span>
           </div>
           <div id="expert-empty" class="board-empty">
             <p>Aucun joueur dans ce classement.</p>
@@ -132,6 +140,7 @@
           <div id="player-list" class="player-list"></div>
           <div class="manager-actions">
             <button id="share-btn" class="btn primary outline">Partager</button>
+            <span id="share-feedback" class="copy-feedback hidden">Lien copié !</span>
             <button id="clear-btn" class="btn danger outline">Tout vider</button>
           </div>
         </div>

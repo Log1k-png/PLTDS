@@ -32,6 +32,7 @@ const els = {
   clearBtn: document.getElementById('clear-btn'),
   playerList: document.getElementById('player-list'),
   shareBtn: document.getElementById('share-btn'),
+  shareFeedback: document.getElementById('share-feedback'),
   abordableStats: document.getElementById('abordable-stats'),
   expertStats: document.getElementById('expert-stats'),
 };
@@ -602,22 +603,68 @@ async function autoLoadFromUrl() {
   setStatus(`${usernames.length} joueur(s) chargé(s).`, 'success');
 }
 
+function writeClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  return Promise.reject(new Error('no-clipboard'));
+}
+
+function flashFeedback(el, text, duration = 1500) {
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove('hidden');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.add('hidden'), duration);
+}
+
 function shareLeaderboard() {
   const url = generateShareUrl();
   if (!url) {
     setStatus('Aucun joueur à partager.', 'error');
     return;
   }
-
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(url).then(() => {
-      setStatus('Lien copié dans le presse-papiers !', 'success');
-    }).catch(() => {
+  writeClipboard(url)
+    .then(() => flashFeedback(els.shareFeedback, 'Lien copié !'))
+    .catch(() => {
       prompt('Copiez ce lien :', url);
     });
-  } else {
-    prompt('Copiez ce lien :', url);
+}
+
+function copyScoreboard(difficulty) {
+  const label = difficulty === 'facile' ? 'Niveau Abordable' : 'Niveau Expert';
+  const t = tables[difficulty];
+  if (t.wrap.classList.contains('hidden')) {
+    setStatus('Aucun joueur à copier.', 'error');
+    return;
   }
+
+  const feedback = document.querySelector(`.copy-board-btn[data-difficulty="${difficulty}"] + .copy-feedback`);
+
+  const visible = el => el.offsetParent !== null;
+  const isDay = el => el.classList.contains('col-today') || el.classList.contains('today-cell') || el.classList.contains('yesterday-cell');
+  const thead = t.wrap.querySelector('thead');
+  const headers = [...thead.querySelectorAll('th')].filter(el => visible(el) && !isDay(el)).map(th => th.textContent.trim());
+  const rows = [...t.body.querySelectorAll('tr')].map(tr =>
+    [...tr.querySelectorAll('td')].filter(el => visible(el) && !isDay(el)).map(td => td.textContent.trim())
+  );
+
+  const matrix = [headers, ...rows];
+  const widths = headers.map((_, ci) => Math.max(...matrix.map(r => (r[ci] || '').length)));
+  const line = r => r.map((c, ci) => (c || '').padEnd(widths[ci] + 2)).join('').trimEnd();
+
+  const season = (allSeasons.find(s => s.number === activeSeason) || {});
+  const text = [
+    `La Table des Savoirs — ${label} — Saison ${activeSeason}${season.name ? ` (${season.name})` : ''}`,
+    '',
+    ...matrix.map(line),
+  ].join('\n');
+
+  writeClipboard(text)
+    .then(() => flashFeedback(feedback, 'Copié !'))
+    .catch(() => {
+      prompt('Copiez ce texte :', text);
+    });
 }
 
 /* ===== Utilities ===== */
@@ -778,6 +825,9 @@ els.input.addEventListener('keydown', e => {
 
 els.clearBtn.addEventListener('click', clearAll);
 els.shareBtn.addEventListener('click', shareLeaderboard);
+document.querySelectorAll('.copy-board-btn').forEach(btn => {
+  btn.addEventListener('click', () => copyScoreboard(btn.dataset.difficulty));
+});
 
 els.seasonPrev.addEventListener('click', goToPrevSeason);
 els.seasonNext.addEventListener('click', goToNextSeason);
