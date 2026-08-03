@@ -12,6 +12,17 @@ export default {
     if (url.pathname.startsWith('/api/')) {
       // Recupere le chemin API sans le prefixe /api/
       const apiPath = url.pathname.slice(5); // enleve '/api/'
+
+      // Valide le chemin : non vide, pas de traverse, prefixes connus uniquement
+      const ALLOWED_PREFIXES = ['seasons', 'leaderboards'];
+      const isAllowed =
+        apiPath &&
+        !apiPath.includes('..') &&
+        ALLOWED_PREFIXES.some(p => apiPath === p || apiPath.startsWith(p + '/'));
+      if (!isAllowed) {
+        return new Response('Not found', { status: 404 });
+      }
+
       const targetUrl = new URL(`https://api.latabledessavoirs.fr/${apiPath}`);
       // Copie les query strings
       url.searchParams.forEach((value, key) => {

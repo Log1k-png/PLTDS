@@ -303,6 +303,10 @@ tbody tr:hover {
   min-width: 70px;
 }
 
+.col-today {
+  width: 40px;
+}
+
 .rank-cell {
   font-weight: 900;
   font-size: 1rem;
@@ -336,6 +340,17 @@ tbody tr:hover {
 .rank-off-cell {
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+.today-cell {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.played-today {
+  color: #34d399;
+  font-size: 0.95rem;
+  font-weight: 900;
 }
 
 /* ===== Empty State ===== */

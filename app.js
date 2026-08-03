@@ -10,6 +10,8 @@ let activeSeason = null;
 let allSeasons = [];
 let networkDown = false;
 let liveScores = {}; // In-memory only: { seasonNumber: { username: { facile, difficile } } }
+let currentDay = null; // Today's day number from /seasons/progress
+let playedToday = null; // { dayNumber, facile: Set, difficile: Set } of usernames who played today
 
 /* ===== DOM Elements ===== */
 const els = {
@@ -77,7 +79,14 @@ async function apiGet(path, params = {}) {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) {
+      if (resp.status >= 500) {
+        networkDown = true;
+        if (els.networkError) els.networkError.classList.remove('hidden');
+        throw new Error('Le serveur de La Table des Savoirs est indisponible.');
+      }
+      throw new Error(`HTTP ${resp.status}`);
+    }
     networkDown = false;
     if (els.networkError) els.networkError.classList.add('hidden');
     return resp.json();
@@ -105,6 +114,34 @@ async function fetchSeasons() {
 
 async function searchLeaderboard(season, difficulty, query) {
   return apiGet(`/leaderboards/season/${season}/${difficulty}/search`, { q: query });
+}
+
+/* ===== Played-Today ===== */
+async function fetchCurrentDay() {
+  const data = await apiGet('/seasons/progress');
+  return data.currentDay;
+}
+
+async function fetchDayPlayedSet(dayNumber, difficulty) {
+  const data = await apiGet(`/leaderboards/day/${dayNumber}/${difficulty}/top`, { limit: -1 });
+  return new Set(Array.isArray(data.entries) ? data.entries.map(e => e.username) : []);
+}
+
+async function loadPlayedToday() {
+  if (!currentDay) return;
+  if (playedToday && playedToday.dayNumber === currentDay) return;
+
+  const result = { dayNumber: currentDay };
+  await Promise.all(
+    DIFFICULTIES.map(async diff => {
+      try {
+        result[diff] = await fetchDayPlayedSet(currentDay, diff);
+      } catch (err) {
+        console.warn(`Failed to load day ${currentDay} ${diff}:`, err);
+      }
+    })
+  );
+  playedToday = result;
 }
 
 /* ===== Live Score Fetching ===== */
@@ -157,6 +194,7 @@ function addTrackedUsername(username) {
 }
 
 function removeTrackedPlayer(username) {
+  if (!confirm(`Retirer ${username} de votre leaderboard ?`)) return;
   const tracked = loadTracked().filter(u => u !== username);
   saveTracked(tracked);
   Object.values(liveScores).forEach(cache => {
@@ -228,6 +266,27 @@ function renderResults(resultsMap) {
   }
 }
 
+function compareByRank(a, b) {
+  const aHas = a && a.rank != null;
+  const bHas = b && b.rank != null;
+  if (aHas && !bHas) return -1;
+  if (!aHas && bHas) return 1;
+  if (aHas && bHas) {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    if (a.score !== b.score) return b.score - a.score;
+    return 0;
+  }
+  return 0;
+}
+
+function sortPlayersForDifficulty(players, difficulty) {
+  return [...players].sort((a, b) => {
+    const byRank = compareByRank(a[difficulty], b[difficulty]);
+    if (byRank !== 0) return byRank;
+    return a.username.localeCompare(b.username);
+  });
+}
+
 function getSortedTrackedForSeason(season) {
   const tracked = loadTracked();
   const seasonCache = liveScores[season] || {};
@@ -237,22 +296,8 @@ function getSortedTrackedForSeason(season) {
   });
 
   return {
-    facile: [...players].sort((a, b) => {
-      const aHas = a.facile && a.facile.score != null;
-      const bHas = b.facile && b.facile.score != null;
-      if (aHas && !bHas) return -1;
-      if (!aHas && bHas) return 1;
-      if (aHas && bHas) return b.facile.score - a.facile.score;
-      return a.username.localeCompare(b.username);
-    }),
-    difficile: [...players].sort((a, b) => {
-      const aHas = a.difficile && a.difficile.score != null;
-      const bHas = b.difficile && b.difficile.score != null;
-      if (aHas && !bHas) return -1;
-      if (!aHas && bHas) return 1;
-      if (aHas && bHas) return b.difficile.score - a.difficile.score;
-      return a.username.localeCompare(b.username);
-    }),
+    facile: sortPlayersForDifficulty(players, 'facile'),
+    difficile: sortPlayersForDifficulty(players, 'difficile'),
   };
 }
 
@@ -281,6 +326,9 @@ function renderDifficultyTable(difficulty) {
           : info.score.toLocaleString('fr-FR'))
       : '—';
     const rank = info ? '#' + info.rank.toLocaleString('fr-FR') : '—';
+    const played = playedToday && playedToday[difficulty]
+      ? playedToday[difficulty].has(p.username)
+      : null;
 
     const tr = document.createElement('tr');
     if (idx < 3) tr.classList.add(`rank-${idx + 1}`);
@@ -290,6 +338,7 @@ function renderDifficultyTable(difficulty) {
       <td class="user-cell">${escapeHtml(p.username)}</td>
       <td class="score-cell">${score}</td>
       <td class="rank-off-cell">${rank}</td>
+      <td class="today-cell">${played ? '<span class="played-today" title="A joué aujourd\'hui">✓</span>' : (played === null ? '—' : '·')}</td>
     `;
     t.body.appendChild(tr);
   });
@@ -644,10 +693,16 @@ async function init() {
     renderAllTables();
     await autoLoadFromUrl();
     updateSeasonNav();
-    await fetchAllTrackedScores(activeSeason);
-    renderAllTables();
   }
   hideSpinner();
+
+  try {
+    currentDay = await fetchCurrentDay();
+    await loadPlayedToday();
+    renderAllTables();
+  } catch (err) {
+    console.warn('Impossible de charger les infos du jour:', err);
+  }
 }
 
 /* ===== Event Listeners ===== */
