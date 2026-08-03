@@ -315,14 +315,22 @@ function getSortedTrackedForSeason(season) {
   };
 }
 
-function formatDayCell(entry, isToday) {
-  if (!entry) return '—';
-  const score = entry.score.toLocaleString('fr-FR');
-  const correct = entry.correctCount != null ? `${entry.correctCount}/10` : '';
-  return `<span class="day-cell">
-    <span class="${isToday ? 'today-score' : 'day-score'}">${score}</span>
-    ${correct ? `<span class="day-correct">${correct}</span>` : ''}
-  </span>`;
+function formatDayCell(entry, isToday, isLoading) {
+  let scoreLine;
+  let correctLine = '<span class="day-correct">&nbsp;</span>';
+
+  if (isLoading) {
+    scoreLine = '<span class="day-loading">…</span>';
+  } else if (entry) {
+    scoreLine = `<span class="${isToday ? 'today-score' : 'day-score'}">${entry.score.toLocaleString('fr-FR')}</span>`;
+    if (entry.correctCount != null) {
+      correctLine = `<span class="day-correct">${entry.correctCount}/10</span>`;
+    }
+  } else {
+    scoreLine = '<span class="day-score">—</span>';
+  }
+
+  return `<span class="day-cell">${scoreLine}${correctLine}</span>`;
 }
 
 function renderDifficultyTable(difficulty) {
@@ -356,8 +364,8 @@ function renderDifficultyTable(difficulty) {
     const todayEntry = todayMap && todayMap.get(p.username);
     const yesterdayEntry = yesterdayMap && yesterdayMap.get(p.username);
 
-    const todayCell = formatDayCell(todayEntry, true);
-    const yesterdayCell = formatDayCell(yesterdayEntry, false);
+    const todayCell = formatDayCell(todayEntry, true, !todayScores);
+    const yesterdayCell = formatDayCell(yesterdayEntry, false, !yesterdayScores);
 
     const tr = document.createElement('tr');
     if (idx < 3) tr.classList.add(`rank-${idx + 1}`);

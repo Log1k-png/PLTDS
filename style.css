@@ -356,7 +356,10 @@ tbody tr:hover {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.1rem;
+  min-height: 2.4rem;
+  line-height: 1.1;
 }
 
 .day-score {
@@ -366,6 +369,16 @@ tbody tr:hover {
 .day-correct {
   font-size: 0.7rem;
   opacity: 0.75;
+}
+
+.day-loading {
+  color: var(--text-muted);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .yesterday-cell {
