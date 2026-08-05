@@ -51,6 +51,7 @@ const els = {
   results: document.getElementById('search-results'),
   clearBtn: document.getElementById('clear-btn'),
   playerList: document.getElementById('player-list'),
+  playedToday: document.getElementById('played-today-strip'),
   shareBtn: document.getElementById('share-btn'),
   shareFeedback: document.getElementById('share-feedback'),
   abordableStats: document.getElementById('abordable-stats'),
@@ -193,9 +194,9 @@ async function loadDayScores(dayNumber) {
   return result;
 }
 
-async function loadRecentScores() {
+async function loadRecentScores(force = false) {
   if (!currentDay) return;
-  if (todayScores && todayScores.dayNumber === currentDay) return;
+  if (!force && todayScores && todayScores.dayNumber === currentDay) return;
 
   const [today, yesterday] = await Promise.all([
     loadDayScores(currentDay),
@@ -287,6 +288,12 @@ async function addPlayer(entry, difficulty) {
   if (!liveScores[activeSeason]) liveScores[activeSeason] = {};
   const scores = await fetchPlayerScores(entry.username, activeSeason);
   liveScores[activeSeason][entry.username] = scores;
+
+  try {
+    await loadRecentScores(true);
+  } catch (err) {
+    console.warn('Refresh today scores failed:', err);
+  }
 
   renderAllTables();
   invalidateCharts();
@@ -493,10 +500,91 @@ function renderPlayerManager() {
 }
 
 function renderAllTables() {
+  renderPlayedToday();
   renderDifficultyTable('facile');
   renderDifficultyTable('difficile');
   renderBoardStats();
   renderPlayerManager();
+}
+
+function bestEntriesFrom(scores, trackedSet) {
+  let best = [];
+  let bestScore = -Infinity;
+  let bestCorrect = -Infinity;
+  if (!scores) return best;
+  DIFFICULTIES.forEach(diff => {
+    const map = scores[diff];
+    if (!map) return;
+    map.forEach((entry, username) => {
+      if (!entry || entry.score == null) return;
+      if (trackedSet && !trackedSet.has(username)) return;
+      const correct = entry.correctCount == null ? -1 : entry.correctCount;
+      if (entry.score > bestScore) {
+        bestScore = entry.score;
+        bestCorrect = correct;
+        best = [{ name: username, score: entry.score, correct }];
+      } else if (entry.score === bestScore && correct > bestCorrect) {
+        bestCorrect = correct;
+        best = [{ name: username, score: entry.score, correct }];
+      } else if (entry.score === bestScore && correct === bestCorrect) {
+        if (!best.some(b => b.name === username)) best.push({ name: username, score: entry.score, correct });
+      }
+    });
+  });
+  return best.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderPlayedToday() {
+  const strip = els.playedToday;
+  if (!strip) return;
+
+  if (activeSeason !== currentSeason) {
+    strip.classList.add('hidden');
+    return;
+  }
+  strip.classList.remove('hidden');
+
+  const tracked = loadTracked();
+
+  if (tracked.length === 0) {
+    strip.innerHTML = `<span>Ajoutez des joueurs pour suivre qui joue aujourd'hui.</span>`;
+    return;
+  }
+  if (!todayScores) {
+    strip.innerHTML = `<span class="day-loading">…</span>`;
+    return;
+  }
+
+  const trackedSet = new Set(tracked);
+  const played = new Set();
+  DIFFICULTIES.forEach(diff => {
+    const map = todayScores[diff];
+    if (!map) return;
+    map.forEach((entry, username) => {
+      if (entry && trackedSet.has(username)) played.add(username);
+    });
+  });
+
+  if (played.size === 0) {
+    strip.innerHTML = `<span>Aucun joueur suivi n'a joué aujourd'hui.</span>`;
+    return;
+  }
+
+  let html = `<span class="pt-count">${played.size}</span>/<span>${tracked.length}</span> ont joué aujourd'hui`;
+
+  const todayBest = bestEntriesFrom(todayScores, trackedSet);
+  if (todayBest.length > 0) {
+    const names = todayBest.map(b => `<span class="pt-best">${escapeHtml(b.name)}</span>`).join(', ');
+    html += ` &middot; Meilleur : ${names} (${todayBest[0].score} pts)`;
+  }
+
+  const yesterdayBest = bestEntriesFrom(yesterdayScores, trackedSet);
+  if (yesterdayBest.length > 0) {
+    const names = yesterdayBest.map(b => `<span class="pt-best">${escapeHtml(b.name)}</span>`).join(', ');
+    html += ` &middot; Hier : ${names} (${yesterdayBest[0].score} pts)`;
+  }
+
+  strip.innerHTML = html;
 }
 
 /* ===== Search Logic ===== */
@@ -636,6 +724,11 @@ async function autoLoadFromUrl() {
   }
 
   saveTracked(tracked);
+  try {
+    await loadRecentScores(true);
+  } catch (err) {
+    console.warn('Refresh today scores failed:', err);
+  }
   renderAllTables();
   hideSpinner();
   setStatus(`${usernames.length} joueur(s) chargé(s).`, 'success');

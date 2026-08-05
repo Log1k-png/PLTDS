@@ -216,6 +216,25 @@ a:hover {
   gap: 1rem;
 }
 
+/* ===== Played today strip ===== */
+.played-today {
+  grid-column: 1 / -1;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.played-today .pt-count {
+  font-weight: 900;
+  color: var(--gold);
+}
+.played-today .pt-best {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 @media (min-width: 800px) {
   .boards {
     grid-template-columns: 1fr 1fr;
