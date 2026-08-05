@@ -953,7 +953,7 @@ function drawLineChart(svg, days, allSeries, getValues) {
   pickIndices(days.length, 6).forEach(i => {
     const x = xAt(i);
     if (x < ML + 18) return;
-    const lbl = svgEl('text', { x, y: H - MB + 4, class: 'xlabel' });
+    const lbl = svgEl('text', { x, y: H - MB + 4, class: 'xlabel' + (i === days.length - 1 ? ' xlabel-end' : '') });
     lbl.textContent = dayToDate(days[i]);
     svg.appendChild(lbl);
   });
