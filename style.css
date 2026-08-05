@@ -456,6 +456,199 @@ tr.highlighted .user-cell {
   opacity: 0.75;
 }
 
+/* ===== Charts ===== */
+.charts-section {
+  background: var(--surface);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.charts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.charts-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.chart-show-btn {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chart-loading {
+  margin: 1rem 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.chart-progress {
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.chart-toggle {
+  display: flex;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem;
+}
+
+.chart-toggle button {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s, color 0.2s;
+}
+
+.chart-toggle button.active {
+  background: var(--primary);
+  color: #0b1218;
+}
+
+.chart-block {
+  margin-top: 1.25rem;
+}
+
+.chart-block h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.3px;
+}
+
+.chart-block svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
+}
+
+.chart-block svg line.grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.chart-block svg path.data-line,
+.chart-block svg path.avg-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-block svg text {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.chart-block svg text.ylabel {
+  text-anchor: end;
+}
+
+.chart-block svg text.xlabel {
+  text-anchor: middle;
+}
+
+.chart-block svg .hover-guide {
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.chart-block svg .hover-dot {
+  stroke: #0b1218;
+  stroke-width: 1.5;
+}
+
+.chart-block svg text.hover-value {
+  font-size: 10px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(11, 18, 24, 0.9);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.chart-block svg text.hover-day {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chart-legend .legend-item {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chart-legend .legend-item:hover {
+  opacity: 0.75;
+}
+
+.chart-legend .legend-item.hidden-line {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+.chart-legend .swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.chart-legend .swatch.avg {
+  height: 0;
+  width: 14px;
+  background: none;
+  border-top: 2px dashed #d1d5db;
+  border-radius: 0;
+}
+
 /* ===== Bottom Section ===== */
 .bottom-section {
   display: grid;

@@ -120,6 +120,42 @@
         </div>
       </div>
 
+      <!-- Charts -->
+      <button id="charts-toggle-btn" class="btn primary chart-show-btn" type="button">Afficher les graphiques d'évolution</button>
+      <section id="charts-section" class="charts-section hidden">
+        <div class="charts-header">
+          <h2>Évolution</h2>
+          <div class="chart-controls">
+            <div class="chart-toggle" id="chart-diff-toggle">
+              <button data-difficulty="facile" class="active" type="button">Abordable</button>
+              <button data-difficulty="difficile" type="button">Expert</button>
+            </div>
+            <div class="chart-toggle" id="chart-metric-toggle">
+              <button data-metric="score" class="active" type="button">Score</button>
+              <button data-metric="correct" type="button">Bonnes réponses</button>
+            </div>
+            <div class="chart-toggle" id="chart-avg-toggle">
+              <button data-avg="visible" class="active" type="button">Moy. visibles</button>
+              <button data-avg="all" type="button">Moy. tous</button>
+            </div>
+          </div>
+        </div>
+        <p id="charts-loading" class="chart-loading hidden">Chargement de l'évolution…</p>
+        <div id="charts-progress" class="progress-bar chart-progress"><div id="charts-progress-fill" class="progress-fill"></div></div>
+        <div class="chart-block">
+          <h3>Cumul</h3>
+          <svg id="chart-cumulative" viewBox="0 0 800 300" role="img" aria-label="Évolution cumulée"></svg>
+        </div>
+        <div class="chart-block">
+          <h3>Quotidien</h3>
+          <svg id="chart-daily" viewBox="0 0 800 300" role="img" aria-label="Score quotidien"></svg>
+        </div>
+        <div class="chart-block">
+          <h3>Moyenne</h3>
+          <svg id="chart-average" viewBox="0 0 800 300" role="img" aria-label="Moyenne"></svg>
+        </div>
+      </section>
+
       <!-- Bottom Section: Search + Player Manager -->
       <section class="bottom-section">
         <div class="bottom-card search-part">

@@ -11,8 +11,16 @@ let allSeasons = [];
 let networkDown = false;
 let liveScores = {}; // In-memory only: { seasonNumber: { username: { facile, difficile } } }
 let currentDay = null; // Today's day number from /seasons/progress
+let firstDayDate = null; // Date of day 1, from /seasons/progress
 let todayScores = null; // { dayNumber, facile: Map<username, entry>, difficile: Map<username, entry> }
 let yesterdayScores = null; // same structure for the previous day
+let chartData = null; // { season, days: [dayNumber], players: { username: { dayNumber: entry } } }
+let chartMetric = 'score'; // 'score' | 'correct'
+let chartDifficulty = 'facile'; // 'facile' | 'difficile'
+let chartAvgBase = 'visible'; // 'visible' | 'all'
+let chartCache = {}; // { 'season-difficulty': data } — persists until page refresh
+let chartsVisible = false;
+let chartHidden = new Set(); // player names (or '__avg__') toggled off via legend
 
 /* ===== DOM Elements ===== */
 const els = {
@@ -35,6 +43,14 @@ const els = {
   shareFeedback: document.getElementById('share-feedback'),
   abordableStats: document.getElementById('abordable-stats'),
   expertStats: document.getElementById('expert-stats'),
+  chartsSection: document.getElementById('charts-section'),
+  chartsToggleBtn: document.getElementById('charts-toggle-btn'),
+  chartsLoading: document.getElementById('charts-loading'),
+  chartsProgress: document.getElementById('charts-progress'),
+  chartsProgressFill: document.getElementById('charts-progress-fill'),
+  chartCumulative: document.getElementById('chart-cumulative'),
+  chartDaily: document.getElementById('chart-daily'),
+  chartAverage: document.getElementById('chart-average'),
 };
 
 const tables = {
@@ -127,7 +143,7 @@ async function fetchSeasons() {
   const data = await apiGet('/seasons');
   return {
     current: data.currentSeason.seasonNumber,
-    seasons: data.seasons.map(s => ({ number: s.seasonNumber, name: s.name })),
+    seasons: data.seasons.map(s => ({ number: s.seasonNumber, name: s.name, dayStart: s.dayStart, dayEnd: s.dayEnd })),
   };
 }
 
@@ -138,6 +154,7 @@ async function searchLeaderboard(season, difficulty, query) {
 /* ===== Today / Yesterday Scores ===== */
 async function fetchCurrentDay() {
   const data = await apiGet('/seasons/progress');
+  firstDayDate = data.firstDayDate || firstDayDate;
   return data.currentDay;
 }
 
@@ -199,11 +216,17 @@ async function fetchAllTrackedScores(season) {
     return;
   }
 
+  const cached = liveScores[season];
+  if (cached && tracked.every(u => cached[u])) {
+    return; // already loaded in memory; keep until page refresh
+  }
+
   showSpinner(`Chargement des scores pour la saison ${season}…`);
-  liveScores[season] = {};
+  liveScores[season] = cached || {};
 
   for (let i = 0; i < tracked.length; i++) {
     const username = tracked[i];
+    if (liveScores[season][username]) continue;
     updateSpinnerProgress(
       `Chargement des scores… ${i + 1}/${tracked.length}`,
       i + 1,
@@ -234,6 +257,7 @@ function removeTrackedPlayer(username) {
     if (cache[username]) delete cache[username];
   });
   renderAllTables();
+  invalidateCharts();
 }
 
 function clearAll() {
@@ -242,6 +266,7 @@ function clearAll() {
   setHighlighted(null);
   liveScores = {};
   renderAllTables();
+  invalidateCharts();
 }
 
 async function addPlayer(entry, difficulty) {
@@ -252,6 +277,7 @@ async function addPlayer(entry, difficulty) {
   liveScores[activeSeason][entry.username] = scores;
 
   renderAllTables();
+  invalidateCharts();
 }
 
 /* ===== Rendering ===== */
@@ -667,6 +693,413 @@ function copyScoreboard(difficulty) {
     });
 }
 
+/* ===== Charts (Abordable) ===== */
+const CHART_COLORS = ['#2addf3', '#ecca25', '#b48bff', '#34d399', '#f472b6', '#fb923c', '#60a5fa', '#f87171'];
+
+function chartValue(entry, metric) {
+  if (!entry) return null;
+  return metric === 'score' ? entry.score : entry.correctCount;
+}
+
+function fetchSeasonDaySeries(season, difficulty, onProgress) {
+  const info = allSeasons.find(s => s.number === season);
+  const tracked = loadTracked();
+  if (!info || tracked.length === 0) return Promise.resolve(null);
+  if (season === currentSeason && !currentDay) return Promise.resolve(null);
+
+  const lastDay = season === currentSeason ? currentDay : info.dayEnd;
+  if (!lastDay || lastDay < info.dayStart) return Promise.resolve(null);
+
+  const days = [];
+  for (let d = info.dayStart; d <= lastDay; d++) days.push(d);
+
+  let done = 0;
+  const total = days.length;
+
+  return Promise.all(days.map(day =>
+    fetchDayEntries(day, difficulty)
+      .catch(() => [])
+      .finally(() => {
+        done++;
+        if (onProgress) onProgress(done, total);
+      })
+  )).then(results => {
+    const players = {};
+    tracked.forEach(u => players[u] = {});
+    results.forEach((entries, i) => {
+      const day = days[i];
+      entries.forEach(e => {
+        if (players[e.username] !== undefined) players[e.username][day] = e;
+      });
+    });
+    return { season, days, players };
+  });
+}
+
+function buildChartSeries(days, players, metric) {
+  return Object.entries(players).map(([username, data]) => {
+    let cum = 0;
+    let played = 0;
+    const cumArr = [];
+    const dailyArr = [];
+    const avgArr = [];
+    days.forEach(day => {
+      const v = chartValue(data[day], metric);
+      if (v !== null) {
+        cum += v;
+        played++;
+      }
+      cumArr.push(cum);
+      dailyArr.push(v);
+      avgArr.push(played > 0 ? cum / played : null);
+    });
+    return { name: username, cum: cumArr, daily: dailyArr, avg: avgArr };
+  });
+}
+
+function clearChartSvgs() {
+  [els.chartCumulative, els.chartDaily, els.chartAverage].forEach(svg => {
+    svg.parentNode.querySelectorAll('.chart-legend').forEach(el => el.remove());
+    svg.innerHTML = '';
+  });
+}
+
+function renderCharts() {
+  if (!chartData) {
+    clearChartSvgs();
+    return;
+  }
+  const series = buildChartSeries(chartData.days, chartData.players, chartMetric);
+  drawLineChart(els.chartCumulative, chartData.days, series, s => s.cum);
+  drawLineChart(els.chartDaily, chartData.days, series, s => s.daily);
+  drawLineChart(els.chartAverage, chartData.days, series, s => s.avg);
+}
+
+async function loadCharts() {
+  const tracked = loadTracked();
+  if (!activeSeason || tracked.length === 0) {
+    chartCache = {};
+    chartData = null;
+    clearChartSvgs();
+    els.chartsLoading.textContent = 'Ajoutez des joueurs pour voir les graphiques.';
+    els.chartsLoading.classList.remove('hidden');
+    return;
+  }
+
+  const key = `${activeSeason}-${chartDifficulty}`;
+  if (chartCache[key]) {
+    chartData = chartCache[key];
+    renderCharts();
+    return;
+  }
+
+  clearChartSvgs();
+  els.chartsLoading.textContent = 'Chargement de l\'évolution…';
+  els.chartsLoading.classList.remove('hidden');
+  els.chartsProgressFill.style.width = '0%';
+  els.chartsProgress.classList.add('visible');
+  try {
+    const data = await fetchSeasonDaySeries(activeSeason, chartDifficulty, (done, total) => {
+      const pct = Math.round((done / total) * 100);
+      els.chartsProgressFill.style.width = pct + '%';
+      els.chartsLoading.textContent = `Chargement de l'évolution… ${done}/${total}`;
+    });
+    chartCache[key] = data;
+    chartData = data;
+    renderCharts();
+  } catch (err) {
+    console.warn('Impossible de charger l\'évolution:', err);
+  } finally {
+    els.chartsLoading.classList.add('hidden');
+    els.chartsProgress.classList.remove('visible');
+  }
+}
+
+function invalidateCharts() {
+  const key = `${activeSeason}-${chartDifficulty}`;
+  delete chartCache[key];
+  if (chartsVisible) loadCharts();
+}
+
+function hideCharts() {
+  chartsVisible = false;
+  clearChartSvgs();
+  els.chartsSection.classList.add('hidden');
+  els.chartsToggleBtn.textContent = 'Afficher les graphiques d\'évolution';
+}
+
+function toggleCharts() {
+  if (chartsVisible) {
+    chartsVisible = false;
+    els.chartsSection.classList.add('hidden');
+    els.chartsToggleBtn.textContent = 'Afficher les graphiques d\'évolution';
+    return;
+  }
+  chartsVisible = true;
+  els.chartsSection.classList.remove('hidden');
+  els.chartsToggleBtn.textContent = 'Masquer les graphiques d\'évolution';
+  loadCharts();
+}
+
+const MAX_Y_LABELS = 15;
+
+function niceStep(raw) {
+  if (!(raw > 0)) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / pow;
+  const NICE = [1, 2, 2.5, 5, 10];
+  const nice = NICE.find(x => x >= n) || 10;
+  return nice * pow;
+}
+
+function nextNiceStep(step) {
+  const NICE = [1, 2, 2.5, 5, 10];
+  const pow = Math.pow(10, Math.floor(Math.log10(step)));
+  const n = step / pow;
+  const idx = NICE.findIndex(x => x >= n);
+  return idx >= NICE.length - 1 ? NICE[0] * pow * 10 : NICE[idx + 1] * pow;
+}
+
+function dayToDate(day) {
+  if (!firstDayDate) return String(day);
+  const d = new Date(new Date(firstDayDate).getTime() + (day - 1) * 86400000);
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+function pickIndices(count, n) {
+  if (count <= n) return Array.from({ length: count }, (_, i) => i);
+  const out = [];
+  for (let k = 0; k < n; k++) out.push(Math.round((k / (n - 1)) * (count - 1)));
+  return [...new Set(out)];
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+const AVG_COLOR = '#d1d5db';
+
+function drawLineChart(svg, days, allSeries, getValues) {
+  const W = Math.max(300, svg.parentNode.clientWidth || 800);
+  const H = 300;
+  const ML = 46;
+  const MR = 12;
+  const MT = 12;
+  const MB = 26;
+  const PW = W - ML - MR;
+  const PH = H - MT - MB;
+
+  svg.parentNode.querySelectorAll('.chart-legend').forEach(el => el.remove());
+  svg.innerHTML = '';
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  if (days.length === 0) return;
+
+  const allPlottable = allSeries
+    .map(s => ({ name: s.name, values: getValues(s) }))
+    .filter(s => s.values.some(v => v !== null))
+    .map((s, idx) => ({ ...s, color: CHART_COLORS[idx % CHART_COLORS.length] }));
+
+  const series = allPlottable.filter(s => !chartHidden.has(s.name));
+
+  const showAvg = !chartHidden.has('__avg__');
+  const avgSource = chartAvgBase === 'all' ? allPlottable : series;
+  const avgValues = days.map((_, i) => {
+    const vals = avgSource.map(s => s.values[i]).filter(v => v !== null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  });
+  const avgVisible = showAvg && avgValues.some(v => v !== null);
+
+  const plotted = [
+    ...series.flatMap(s => s.values.filter(v => v !== null)),
+    ...(avgVisible ? avgValues.filter(v => v !== null) : []),
+  ];
+
+  let yMin = 0;
+  let yMax = 1;
+  let step = 1;
+  if (plotted.length > 0) {
+    const dataMin = Math.min(...plotted);
+    const dataMax = Math.max(...plotted);
+    const span = dataMax - dataMin;
+    const raw = span > 0 ? span / 9 : Math.max(Math.abs(dataMax) / 9, 1);
+    step = niceStep(raw);
+    const bounds = s => [
+      Math.min(0, Math.floor(dataMin / s) * s),
+      Math.max(0, Math.ceil(dataMax / s) * s),
+    ];
+    [yMin, yMax] = bounds(step);
+    while ((yMax - yMin) / step + 1 > MAX_Y_LABELS) {
+      step = nextNiceStep(step);
+      [yMin, yMax] = bounds(step);
+    }
+    if (yMax - yMin < step) yMax = yMin + step;
+  }
+
+  const xAt = i => ML + (days.length === 1 ? PW / 2 : (i / (days.length - 1)) * PW);
+  const yAt = v => MT + PH - ((v - yMin) / (yMax - yMin)) * PH;
+
+  for (let v = yMin; v <= yMax; v += step) {
+    const y = yAt(v);
+    svg.appendChild(svgEl('line', { x1: ML, y1: y, x2: W - MR, y2: y, class: 'grid' }));
+    const lbl = svgEl('text', { x: ML - 6, y: y + 4, class: 'ylabel' });
+    lbl.textContent = String(Math.round(v));
+    svg.appendChild(lbl);
+  }
+
+  pickIndices(days.length, 6).forEach(i => {
+    const x = xAt(i);
+    if (x < ML + 18) return;
+    const lbl = svgEl('text', { x, y: H - MB + 4, class: 'xlabel' });
+    lbl.textContent = dayToDate(days[i]);
+    svg.appendChild(lbl);
+  });
+
+  const lineEls = [];
+  series.forEach(s => {
+    let d = '';
+    s.values.forEach((v, i) => {
+      if (v === null) return;
+      d += (d ? ' L' : 'M') + xAt(i).toFixed(1) + ' ' + yAt(v).toFixed(1);
+    });
+    if (!d) return;
+    const path = svgEl('path', { d, class: 'data-line', stroke: s.color });
+    svg.appendChild(path);
+    lineEls.push(path);
+  });
+
+  if (avgVisible) {
+    let d = '';
+    avgValues.forEach((v, i) => {
+      if (v === null) return;
+      d += (d ? ' L' : 'M') + xAt(i).toFixed(1) + ' ' + yAt(v).toFixed(1);
+    });
+    if (d) {
+      const path = svgEl('path', { d, class: 'avg-line', stroke: AVG_COLOR, 'stroke-dasharray': '6 4' });
+      svg.appendChild(path);
+      lineEls.push(path);
+    }
+  }
+
+  // Legend: click a name to toggle that line
+  const legend = document.createElement('div');
+  legend.className = 'chart-legend';
+  const addLegendItem = (name, key, color, avg) => {
+    const span = document.createElement('span');
+    span.className = 'legend-item' + (chartHidden.has(key) ? ' hidden-line' : '');
+    span.dataset.name = key;
+    span.innerHTML = `<span class="swatch${avg ? ' avg' : ''}"${avg ? '' : ` style="background:${color}"`}></span>${escapeHtml(name)}`;
+    legend.appendChild(span);
+  };
+  allPlottable.forEach(s => addLegendItem(s.name, s.name, s.color, false));
+  addLegendItem('Moyenne', '__avg__', AVG_COLOR, true);
+  legend.addEventListener('click', e => {
+    const item = e.target.closest('.legend-item');
+    if (!item) return;
+    const name = item.dataset.name;
+    if (chartHidden.has(name)) chartHidden.delete(name);
+    else chartHidden.add(name);
+    renderCharts();
+  });
+  svg.insertAdjacentElement('afterend', legend);
+
+  // ---- Hover: fade other lines, show values ----
+  const svgSeries = series.map(s => ({
+    name: s.name,
+    color: s.color,
+    points: s.values.map((v, i) => (v === null ? null : { x: xAt(i), y: yAt(v), v })),
+  }));
+  if (avgVisible) {
+    svgSeries.push({
+      name: '__avg__',
+      color: AVG_COLOR,
+      points: avgValues.map((v, i) => (v === null ? null : { x: xAt(i), y: yAt(v), v })),
+    });
+  }
+  const overlay = svgEl('g', { class: 'hover-overlay' });
+  svg.appendChild(overlay);
+
+  const fmtVal = v => String(Math.round(v * 10) / 10);
+
+  const clearOverlay = () => {
+    overlay.innerHTML = '';
+    lineEls.forEach(p => { p.style.strokeOpacity = '1'; });
+  };
+
+  const segDist = (px, py, ax, ay, bx, by) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  };
+
+  const showHover = (mx, my) => {
+    let hoveredIdx = null;
+    let bestD = Infinity;
+    svgSeries.forEach((s, idx) => {
+      const pts = s.points.filter(p => p !== null);
+      if (pts.length === 0) return;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d = segDist(mx, my, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
+        if (d < bestD) {
+          bestD = d;
+          hoveredIdx = idx;
+        }
+      }
+      if (pts.length === 1) {
+        const d = Math.hypot(mx - pts[0].x, my - pts[0].y);
+        if (d < bestD) {
+          bestD = d;
+          hoveredIdx = idx;
+        }
+      }
+    });
+    if (hoveredIdx === null || bestD > 40) {
+      clearOverlay();
+      return;
+    }
+
+    overlay.innerHTML = '';
+    svgSeries.forEach((s, idx) => {
+      const fade = idx !== hoveredIdx;
+      lineEls[idx].style.strokeOpacity = fade ? '0.15' : '1';
+      if (fade) return;
+      s.points.forEach(pt => {
+        if (!pt) return;
+        overlay.appendChild(svgEl('circle', { cx: pt.x, cy: pt.y, r: 4, class: 'hover-dot', fill: s.color }));
+        let lx = pt.x;
+        let anchor = 'middle';
+        if (pt.x > W - 30) { anchor = 'end'; lx = pt.x - 6; }
+        else if (pt.x < ML + 30) { anchor = 'start'; lx = pt.x + 6; }
+        const ly = pt.y - 9 < MT + 2 ? pt.y + 16 : pt.y - 9;
+        const lbl = svgEl('text', { x: lx, y: ly, class: 'hover-value', fill: s.color, 'text-anchor': anchor });
+        lbl.textContent = fmtVal(pt.v);
+        overlay.appendChild(lbl);
+      });
+    });
+  };
+
+  svg._hoverState = { W, H, ML, MT, MB, PW, svgSeries, lineEls, overlay, clearOverlay, showHover };
+  if (!svg._hoverBound) {
+    svg._hoverBound = true;
+    svg.addEventListener('mousemove', e => {
+      const st = svg._hoverState;
+      const rect = svg.getBoundingClientRect();
+      const mx = ((e.clientX - rect.left) / rect.width) * st.W;
+      const my = ((e.clientY - rect.top) / rect.height) * st.H;
+      st.showHover(mx, my);
+    });
+    svg.addEventListener('mouseleave', () => {
+      svg._hoverState.clearOverlay();
+    });
+  }
+}
+
 /* ===== Utilities ===== */
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -697,6 +1130,7 @@ function goToPrevSeason() {
     updateSeasonNav();
     renderAllTables();
     fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
+    hideCharts();
   }
 }
 
@@ -708,6 +1142,7 @@ function goToNextSeason() {
     updateSeasonNav();
     renderAllTables();
     fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
+    hideCharts();
   }
 }
 
@@ -829,8 +1264,44 @@ document.querySelectorAll('.copy-board-btn').forEach(btn => {
   btn.addEventListener('click', () => copyScoreboard(btn.dataset.difficulty));
 });
 
+els.chartsToggleBtn.addEventListener('click', toggleCharts);
+
+document.querySelectorAll('#chart-diff-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#chart-diff-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    chartDifficulty = btn.dataset.difficulty;
+    loadCharts();
+  });
+});
+
+document.querySelectorAll('#chart-metric-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#chart-metric-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    chartMetric = btn.dataset.metric;
+    renderCharts();
+  });
+});
+
+document.querySelectorAll('#chart-avg-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#chart-avg-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    chartAvgBase = btn.dataset.avg;
+    renderCharts();
+  });
+});
+
 els.seasonPrev.addEventListener('click', goToPrevSeason);
 els.seasonNext.addEventListener('click', goToNextSeason);
+
+let chartResizeTimer = null;
+window.addEventListener('resize', () => {
+  if (!chartsVisible || !chartData) return;
+  clearTimeout(chartResizeTimer);
+  chartResizeTimer = setTimeout(renderCharts, 150);
+});
 els.retryBtn.addEventListener('click', () => {
   els.networkError.classList.add('hidden');
   init();
