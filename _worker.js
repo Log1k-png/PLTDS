@@ -2,8 +2,23 @@
  * Cloudflare Pages _worker.js (Advanced Mode)
  * Intercepte toutes les requetes. Si le chemin commence par /api/,
  * on fait office de proxy vers l'API de La Table des Savoirs.
- * Sinon, Pages sert les fichiers statiques normalement.
+ * Sinon, on ne sert que les fichiers statiques de la liste ALLOWED_STATIC
+ * (tout le reste, y compris README.md, repond 404).
  */
+
+// Seuls ces fichiers sont servis publiquement. Ajoutez ici tout nouveau
+// fichier du site (image, page, etc.) pour le rendre accessible.
+const ALLOWED_STATIC = new Set([
+  '/',
+  '/index.html',
+  '/app.js',
+  '/style.css',
+  '/favicon.png',
+  '/og-image.png',
+  '/robots.txt',
+  '/sitemap.xml',
+  '/google8cc9053260b18b8f.html',
+]);
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -86,7 +101,13 @@ export default {
       }
     }
 
-    // Pour toutes les autres requetes, servir les assets statiques normalement
-    return env.ASSETS.fetch(request);
+    // Pour les autres requetes, ne servir que les fichiers de la liste blanche
+    const normalized = url.pathname === '/'
+      ? '/'
+      : url.pathname.replace(/\/+$/, '') || '/';
+    if (ALLOWED_STATIC.has(normalized) || ALLOWED_STATIC.has(normalized + '/index.html')) {
+      return env.ASSETS.fetch(request);
+    }
+    return new Response('Not found', { status: 404 });
   }
 };
