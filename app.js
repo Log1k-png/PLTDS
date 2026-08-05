@@ -18,6 +18,18 @@ let chartData = null; // { season, days: [dayNumber], players: { username: { day
 let chartMetric = 'score'; // 'score' | 'correct'
 let chartDifficulty = 'facile'; // 'facile' | 'difficile'
 let chartAvgBase = 'visible'; // 'visible' | 'all'
+const CHART_TITLES = {
+  score: {
+    cumulative: 'Cumul des points',
+    daily: 'Points gagnés',
+    average: 'Nombre moyen de points obtenus',
+  },
+  correct: {
+    cumulative: 'Cumul du nombre de bonnes réponses',
+    daily: 'Nombre de bonnes réponses',
+    average: 'Nombre moyen de bonnes réponses',
+  },
+};
 let chartCache = {}; // { 'season-difficulty': data } — persists until page refresh
 let chartsVisible = false;
 let chartHidden = new Set(); // player names (or '__avg__') toggled off via legend
@@ -636,6 +648,201 @@ function writeClipboard(text) {
   return Promise.reject(new Error('no-clipboard'));
 }
 
+function supportsImageCopy() {
+  return !!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
+}
+
+function downloadPng(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const CHART_IMG_BG = '#181f26';
+const CHART_IMG_TEXT = '#a6c0d8';
+const CHART_IMG_GOLD = '#ecca25';
+const CHART_IMG_STYLE = `
+  @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
+  rect.background { fill: ${CHART_IMG_BG}; }
+  line.grid { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
+  path.data-line, path.avg-line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  path.avg-line { stroke: #d1d5db; stroke-dasharray: 6 4; }
+  text { fill: ${CHART_IMG_TEXT}; font-size: 11px; font-weight: 700; font-family: 'Lato', system-ui, -apple-system, sans-serif; }
+  text.ylabel { text-anchor: end; }
+  text.xlabel { text-anchor: middle; }
+  text.xlabel-end { text-anchor: end; }
+`;
+
+function loadSvgAsImage(xml) {
+  const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  }).finally(() => setTimeout(() => URL.revokeObjectURL(url), 1000));
+}
+
+function renderChartBlob(svg, title, caption) {
+  const clone = svg.cloneNode(true);
+  clone.removeAttribute('id');
+  const vb = clone.viewBox.baseVal;
+  clone.setAttribute('width', vb.width);
+  clone.setAttribute('height', vb.height);
+  const bg = document.createElementNS(SVG_NS, 'rect');
+  bg.setAttribute('class', 'background');
+  bg.setAttribute('x', 0);
+  bg.setAttribute('y', 0);
+  bg.setAttribute('width', vb.width);
+  bg.setAttribute('height', vb.height);
+  clone.insertBefore(bg, clone.firstChild);
+  const style = document.createElementNS(SVG_NS, 'style');
+  style.textContent = CHART_IMG_STYLE;
+  clone.insertBefore(style, clone.firstChild);
+
+  const legend = svg.parentNode.querySelector('.chart-legend');
+  const legendItems = legend ? [...legend.querySelectorAll('.legend-item')] : [];
+  const items = legendItems.map(item => {
+    const swatch = item.querySelector('.swatch');
+    const avg = swatch && swatch.classList.contains('avg');
+    const color = avg ? '#d1d5db' : (swatch ? swatch.style.background : '#ffffff');
+    return { name: item.childNodes[item.childNodes.length - 1].textContent.trim(), color, avg, hidden: item.classList.contains('hidden-line') };
+  });
+
+  const xml = new XMLSerializer().serializeToString(clone);
+
+  return Promise.resolve(document.fonts && document.fonts.load ? document.fonts.load('700 11px Lato').catch(() => {}) : null)
+    .then(() => loadSvgAsImage(xml))
+    .then(img => {
+      const scale = 3;
+      const pad = 24;
+      const titleSize = 17;
+      const captionSize = 12;
+      const itemSize = 13;
+      const rowGap = 6;
+      const legendGap = 14;
+      const titleH = titleSize + 8;
+      const captionH = caption ? captionSize + 6 : 0;
+      const canvasW = img.width;
+
+      let legendRows = 0;
+      if (items.length) {
+        const c = document.createElement('canvas').getContext('2d');
+        c.font = `700 ${itemSize}px Lato, system-ui, sans-serif`;
+        let cur = 0;
+        legendRows = 1;
+        items.forEach(it => {
+          const w = c.measureText(it.name).width + 26;
+          if (cur + w > canvasW - pad * 2) { legendRows++; cur = w; }
+          else cur += w;
+        });
+      }
+      const legendH = legendRows ? legendRows * (itemSize + rowGap) + 6 : 0;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = (canvasW + pad * 2) * scale;
+      canvas.height = (pad + titleH + captionH + img.height + legendGap + legendH + pad) * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+
+      ctx.fillStyle = CHART_IMG_BG;
+      ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale);
+
+      ctx.fillStyle = CHART_IMG_GOLD;
+      ctx.font = `900 ${titleSize}px Lato, system-ui, sans-serif`;
+      ctx.fillText(title, pad, pad + titleSize);
+
+      if (caption) {
+        ctx.fillStyle = CHART_IMG_TEXT;
+        ctx.font = `700 ${captionSize}px Lato, system-ui, sans-serif`;
+        ctx.fillText(caption, pad, pad + titleH + captionSize);
+      }
+
+      ctx.drawImage(img, pad, pad + titleH + captionH);
+
+      if (items.length) {
+        let ly = pad + titleH + captionH + img.height + legendGap;
+        ctx.font = `700 ${itemSize}px Lato, system-ui, sans-serif`;
+        let cur = pad;
+        items.forEach(it => {
+          const textW = ctx.measureText(it.name).width;
+          const w = textW + 26;
+          if (cur + w > canvasW - pad) {
+            cur = pad;
+            ly += itemSize + rowGap;
+          }
+          ctx.globalAlpha = it.hidden ? 0.35 : 1;
+          if (it.avg) {
+            ctx.strokeStyle = it.color;
+            ctx.setLineDash([5, 3]);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(cur, ly - 4);
+            ctx.lineTo(cur + 14, ly - 4);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else {
+            ctx.fillStyle = it.color;
+            ctx.fillRect(cur, ly - itemSize + 3, 14, 3);
+          }
+          ctx.fillStyle = CHART_IMG_TEXT;
+          ctx.fillText(it.name, cur + 20, ly);
+          ctx.globalAlpha = 1;
+          cur += w;
+        });
+      }
+
+      return canvas;
+    })
+    .then(canvas => new Promise((resolve, reject) => {
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob-failed')), 'image/png');
+    }));
+}
+
+function copyChartAsImage(svg, title) {
+  const feedback = svg.parentNode.querySelector('.copy-chart-btn + .copy-feedback');
+  const season = allSeasons.find(s => s.number === activeSeason);
+  const caption = season ? `Saison ${activeSeason} — ${season.name}` : `Saison ${activeSeason}`;
+
+  console.log('[chart-copy]', {
+    isSecureContext: window.isSecureContext,
+    hasClipboard: !!navigator.clipboard,
+    hasWrite: !!(navigator.clipboard && navigator.clipboard.write),
+    hasClipboardItem: !!window.ClipboardItem,
+    supportsImageCopy: supportsImageCopy(),
+  });
+
+  const blobPromise = renderChartBlob(svg, title, caption);
+
+  if (supportsImageCopy()) {
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })])
+      .then(() => flashFeedback(feedback, 'Image copiée !'))
+      .catch(async err => {
+        console.warn('Copie d\'image échouée:', err);
+        const blob = await blobPromise.catch(() => null);
+        if (blob) {
+          downloadPng(blob, `pltds-${title.toLowerCase()}.png`);
+          flashFeedback(feedback, 'Image téléchargée');
+          setStatus(`Impossible de copier l'image sur ce navigateur (${(err && err.name) || 'erreur'}). L'image a été téléchargée à la place.`, 'error');
+        } else {
+          flashFeedback(feedback, 'Erreur !');
+        }
+      });
+  } else {
+    blobPromise
+      .then(blob => {
+        downloadPng(blob, `pltds-${title.toLowerCase()}.png`);
+        flashFeedback(feedback, 'Image téléchargée');
+      })
+      .catch(() => flashFeedback(feedback, 'Erreur !'));
+  }
+}
+
 function flashFeedback(el, text, duration = 1500) {
   if (!el) return;
   el.textContent = text;
@@ -839,6 +1046,18 @@ function toggleCharts() {
   els.chartsSection.classList.remove('hidden');
   els.chartsToggleBtn.textContent = 'Masquer les graphiques d\'évolution';
   loadCharts();
+}
+
+function updateChartTitles() {
+  const t = CHART_TITLES[chartMetric] || CHART_TITLES.score;
+  document.querySelectorAll('.chart-title').forEach(span => {
+    const key = span.dataset.for;
+    if (t[key]) span.textContent = t[key];
+  });
+  document.querySelectorAll('.copy-chart-btn').forEach(btn => {
+    const key = btn.dataset.chart;
+    if (t[key]) btn.dataset.title = t[key];
+  });
 }
 
 const MAX_Y_LABELS = 15;
@@ -1219,6 +1438,7 @@ async function init() {
     }
 
     updateSeasonNav();
+    updateChartTitles();
   } catch (err) {
     console.error(err);
     els.seasonDisplay.textContent = 'Saison inconnue';
@@ -1266,6 +1486,14 @@ document.querySelectorAll('.copy-board-btn').forEach(btn => {
 
 els.chartsToggleBtn.addEventListener('click', toggleCharts);
 
+document.querySelectorAll('.copy-chart-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const svg = document.getElementById('chart-' + btn.dataset.chart);
+    if (!svg) return;
+    copyChartAsImage(svg, btn.dataset.title);
+  });
+});
+
 document.querySelectorAll('#chart-diff-toggle button').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#chart-diff-toggle button').forEach(b => b.classList.remove('active'));
@@ -1280,6 +1508,7 @@ document.querySelectorAll('#chart-metric-toggle button').forEach(btn => {
     document.querySelectorAll('#chart-metric-toggle button').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     chartMetric = btn.dataset.metric;
+    updateChartTitles();
     renderCharts();
   });
 });

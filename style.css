@@ -550,6 +550,32 @@ tr.highlighted .user-cell {
   font-weight: 700;
   color: var(--text);
   letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.copy-chart-btn {
+  cursor: pointer;
+  border: 1px solid var(--border-dim);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.copy-chart-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.copy-chart-btn + .copy-feedback {
+  margin-left: 0.1rem;
 }
 
 .chart-block svg {

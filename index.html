@@ -143,15 +143,15 @@
         <p id="charts-loading" class="chart-loading hidden">Chargement de l'évolution…</p>
         <div id="charts-progress" class="progress-bar chart-progress"><div id="charts-progress-fill" class="progress-fill"></div></div>
         <div class="chart-block">
-          <h3>Cumul</h3>
+          <h3><span class="chart-title" data-for="cumulative">Cumul des points</span> <button class="copy-chart-btn" type="button" data-chart="cumulative" data-title="Cumul des points">Copier l'image</button><span class="copy-feedback hidden"></span></h3>
           <svg id="chart-cumulative" viewBox="0 0 800 300" role="img" aria-label="Évolution cumulée"></svg>
         </div>
         <div class="chart-block">
-          <h3>Quotidien</h3>
+          <h3><span class="chart-title" data-for="daily">Points gagnés</span> <button class="copy-chart-btn" type="button" data-chart="daily" data-title="Points gagnés">Copier l'image</button><span class="copy-feedback hidden"></span></h3>
           <svg id="chart-daily" viewBox="0 0 800 300" role="img" aria-label="Score quotidien"></svg>
         </div>
         <div class="chart-block">
-          <h3>Moyenne</h3>
+          <h3><span class="chart-title" data-for="average">Nombre moyen de points obtenus</span> <button class="copy-chart-btn" type="button" data-chart="average" data-title="Nombre moyen de points obtenus">Copier l'image</button><span class="copy-feedback hidden"></span></h3>
           <svg id="chart-average" viewBox="0 0 800 300" role="img" aria-label="Moyenne"></svg>
         </div>
       </section>
