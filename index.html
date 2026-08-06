@@ -59,8 +59,9 @@
 
       <!-- Leaderboards -->
       <div class="boards">
-        <div id="played-today-strip" class="played-today"><span class="day-loading">…</span></div>
-        <div class="board">
+        <div class="board-group">
+          <div id="played-facile" class="played-today"><span class="day-loading">…</span></div>
+          <div class="board">
           <div class="board-header">
             <h2>Niveau Abordable</h2>
             <span class="board-actions">
@@ -89,8 +90,11 @@
             </table>
           </div>
         </div>
+        </div>
 
-        <div class="board">
+        <div class="board-group">
+          <div id="played-difficile" class="played-today"><span class="day-loading">…</span></div>
+          <div class="board">
           <div class="board-header">
             <h2>Niveau Expert</h2>
             <span class="board-actions">
@@ -118,6 +122,7 @@
               <tbody id="expert-body"></tbody>
             </table>
           </div>
+        </div>
         </div>
       </div>
 

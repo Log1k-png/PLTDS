@@ -51,7 +51,8 @@ const els = {
   results: document.getElementById('search-results'),
   clearBtn: document.getElementById('clear-btn'),
   playerList: document.getElementById('player-list'),
-  playedToday: document.getElementById('played-today-strip'),
+  playedFacile: document.getElementById('played-facile'),
+  playedDifficile: document.getElementById('played-difficile'),
   shareBtn: document.getElementById('share-btn'),
   shareFeedback: document.getElementById('share-feedback'),
   abordableStats: document.getElementById('abordable-stats'),
@@ -507,84 +508,74 @@ function renderAllTables() {
   renderPlayerManager();
 }
 
-function bestEntriesFrom(scores, trackedSet) {
+function bestEntriesFromMap(map, trackedSet) {
   let best = [];
   let bestScore = -Infinity;
-  let bestCorrect = -Infinity;
-  if (!scores) return best;
-  DIFFICULTIES.forEach(diff => {
-    const map = scores[diff];
-    if (!map) return;
-    map.forEach((entry, username) => {
-      if (!entry || entry.score == null) return;
-      if (trackedSet && !trackedSet.has(username)) return;
-      const correct = entry.correctCount == null ? -1 : entry.correctCount;
-      if (entry.score > bestScore) {
-        bestScore = entry.score;
-        bestCorrect = correct;
-        best = [{ name: username, score: entry.score, correct }];
-      } else if (entry.score === bestScore && correct > bestCorrect) {
-        bestCorrect = correct;
-        best = [{ name: username, score: entry.score, correct }];
-      } else if (entry.score === bestScore && correct === bestCorrect) {
-        if (!best.some(b => b.name === username)) best.push({ name: username, score: entry.score, correct });
-      }
-    });
+  if (!map) return best;
+  map.forEach((entry, username) => {
+    if (!entry || entry.score == null) return;
+    if (trackedSet && !trackedSet.has(username)) return;
+    if (entry.score > bestScore) {
+      bestScore = entry.score;
+      best = [{ name: username, score: entry.score }];
+    } else if (entry.score === bestScore) {
+      if (!best.some(b => b.name === username)) best.push({ name: username, score: entry.score });
+    }
   });
   return best.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function renderPlayedToday() {
-  const strip = els.playedToday;
-  if (!strip) return;
-
-  if (activeSeason !== currentSeason) {
-    strip.classList.add('hidden');
-    return;
-  }
-  strip.classList.remove('hidden');
-
+function renderPlayedStrip(el, difficulty, scores, yesterdayScores) {
+  if (!el) return;
   const tracked = loadTracked();
+  const trackedSet = new Set(tracked);
 
   if (tracked.length === 0) {
-    strip.innerHTML = `<span>Ajoutez des joueurs pour suivre qui joue aujourd'hui.</span>`;
+    el.innerHTML = `<span>Ajoutez des joueurs pour suivre qui joue aujourd'hui.</span>`;
     return;
   }
-  if (!todayScores) {
-    strip.innerHTML = `<span class="day-loading">…</span>`;
+  if (!scores) {
+    el.innerHTML = `<span class="day-loading">…</span>`;
     return;
   }
 
-  const trackedSet = new Set(tracked);
+  const map = scores[difficulty];
   const played = new Set();
-  DIFFICULTIES.forEach(diff => {
-    const map = todayScores[diff];
-    if (!map) return;
+  if (map) {
     map.forEach((entry, username) => {
       if (entry && trackedSet.has(username)) played.add(username);
     });
-  });
-
-  if (played.size === 0) {
-    strip.innerHTML = `<span>Aucun joueur suivi n'a joué aujourd'hui.</span>`;
-    return;
   }
 
-  let html = `<span class="pt-count">${played.size}</span>/<span>${tracked.length}</span> ont joué aujourd'hui`;
+  const lines = [`<span class="pt-count">${played.size}</span>/<span>${tracked.length}</span> joueur(s) ont joué aujourd'hui`];
 
-  const todayBest = bestEntriesFrom(todayScores, trackedSet);
+  const todayBest = bestEntriesFromMap(map, trackedSet);
   if (todayBest.length > 0) {
     const names = todayBest.map(b => `<span class="pt-best">${escapeHtml(b.name)}</span>`).join(', ');
-    html += ` &middot; Meilleur : ${names} (${todayBest[0].score} pts)`;
+    lines.push(`Meilleur(s) aujoud'hui : ${names} (${todayBest[0].score} pts)`);
   }
 
-  const yesterdayBest = bestEntriesFrom(yesterdayScores, trackedSet);
+  const yestMap = yesterdayScores ? yesterdayScores[difficulty] : null;
+  const yesterdayBest = bestEntriesFromMap(yestMap, trackedSet);
   if (yesterdayBest.length > 0) {
     const names = yesterdayBest.map(b => `<span class="pt-best">${escapeHtml(b.name)}</span>`).join(', ');
-    html += ` &middot; Hier : ${names} (${yesterdayBest[0].score} pts)`;
+    lines.push(`Meilleur(s) hier : ${names} (${yesterdayBest[0].score} pts)`);
   }
 
-  strip.innerHTML = html;
+  el.innerHTML = lines.map(l => `<span class="pt-line">${l}</span>`).join('');
+}
+
+function renderPlayedToday() {
+  const onCurrent = activeSeason === currentSeason;
+  [[els.playedFacile, 'facile'], [els.playedDifficile, 'difficile']].forEach(([el, diff]) => {
+    if (!el) return;
+    if (!onCurrent) {
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    renderPlayedStrip(el, diff, todayScores, yesterdayScores);
+  });
 }
 
 /* ===== Search Logic ===== */
@@ -1039,7 +1030,7 @@ function fetchSeasonDaySeries(season, difficulty, onProgress) {
 function buildChartSeries(days, players, metric) {
   return Object.entries(players).map(([username, data]) => {
     let cum = 0;
-    let played = 0;
+    let settled = 0;
     const cumArr = [];
     const dailyArr = [];
     const avgArr = [];
@@ -1047,11 +1038,15 @@ function buildChartSeries(days, players, metric) {
       const v = chartValue(data[day], metric);
       if (v !== null) {
         cum += v;
-        played++;
+        settled++;
+      } else if (day !== currentDay) {
+        // Day is over and the player did not play: score is 0, it can no longer change.
+        settled++;
       }
-      cumArr.push(cum);
+      const openToday = v === null && day === currentDay;
+      cumArr.push(openToday ? null : cum);
       dailyArr.push(v);
-      avgArr.push(played > 0 ? cum / played : null);
+      avgArr.push(openToday ? null : (settled > 0 ? cum / settled : null));
     });
     return { name: username, cum: cumArr, daily: dailyArr, avg: avgArr };
   });
@@ -1299,12 +1294,14 @@ function drawLineChart(svg, days, allSeries, getValues) {
   // Legend: click a name to toggle that line
   const legend = document.createElement('div');
   legend.className = 'chart-legend';
+  const legendByKey = {};
   const addLegendItem = (name, key, color, avg) => {
     const span = document.createElement('span');
     span.className = 'legend-item' + (chartHidden.has(key) ? ' hidden-line' : '');
     span.dataset.name = key;
     span.innerHTML = `<span class="swatch${avg ? ' avg' : ''}"${avg ? '' : ` style="background:${color}"`}></span>${escapeHtml(name)}`;
     legend.appendChild(span);
+    legendByKey[key] = span;
   };
   allPlottable.forEach(s => addLegendItem(s.name, s.name, s.color, false));
   addLegendItem('Moyenne', '__avg__', AVG_COLOR, true);
@@ -1336,10 +1333,32 @@ function drawLineChart(svg, days, allSeries, getValues) {
 
   const fmtVal = v => String(Math.round(v * 10) / 10);
 
-  const clearOverlay = () => {
+  const highlightSeries = (idx, showDots) => {
+    lineEls.forEach((p, i) => { p.style.strokeOpacity = i === idx ? '1' : '0.15'; });
     overlay.innerHTML = '';
-    lineEls.forEach(p => { p.style.strokeOpacity = '1'; });
+    Object.values(legendByKey).forEach(li => li.classList.remove('highlighted'));
+    if (idx < 0) {
+      lineEls.forEach(p => { p.style.strokeOpacity = '1'; });
+      return;
+    }
+    const s = svgSeries[idx];
+    if (s && legendByKey[s.name]) legendByKey[s.name].classList.add('highlighted');
+    if (!showDots || !s) return;
+    s.points.forEach(pt => {
+      if (!pt) return;
+      overlay.appendChild(svgEl('circle', { cx: pt.x, cy: pt.y, r: 4, class: 'hover-dot', fill: s.color }));
+      let lx = pt.x;
+      let anchor = 'middle';
+      if (pt.x > W - 30) { anchor = 'end'; lx = pt.x - 6; }
+      else if (pt.x < ML + 30) { anchor = 'start'; lx = pt.x + 6; }
+      const ly = pt.y - 9 < MT + 2 ? pt.y + 16 : pt.y - 9;
+      const lbl = svgEl('text', { x: lx, y: ly, class: 'hover-value', fill: s.color, 'text-anchor': anchor });
+      lbl.textContent = fmtVal(pt.v);
+      overlay.appendChild(lbl);
+    });
   };
+
+  const clearOverlay = () => highlightSeries(-1, false);
 
   const segDist = (px, py, ax, ay, bx, by) => {
     const dx = bx - ax;
@@ -1375,26 +1394,17 @@ function drawLineChart(svg, days, allSeries, getValues) {
       clearOverlay();
       return;
     }
-
-    overlay.innerHTML = '';
-    svgSeries.forEach((s, idx) => {
-      const fade = idx !== hoveredIdx;
-      lineEls[idx].style.strokeOpacity = fade ? '0.15' : '1';
-      if (fade) return;
-      s.points.forEach(pt => {
-        if (!pt) return;
-        overlay.appendChild(svgEl('circle', { cx: pt.x, cy: pt.y, r: 4, class: 'hover-dot', fill: s.color }));
-        let lx = pt.x;
-        let anchor = 'middle';
-        if (pt.x > W - 30) { anchor = 'end'; lx = pt.x - 6; }
-        else if (pt.x < ML + 30) { anchor = 'start'; lx = pt.x + 6; }
-        const ly = pt.y - 9 < MT + 2 ? pt.y + 16 : pt.y - 9;
-        const lbl = svgEl('text', { x: lx, y: ly, class: 'hover-value', fill: s.color, 'text-anchor': anchor });
-        lbl.textContent = fmtVal(pt.v);
-        overlay.appendChild(lbl);
-      });
-    });
+    highlightSeries(hoveredIdx, true);
   };
+
+  // Hovering a legend name highlights its line (and vice versa)
+  legend.addEventListener('mouseover', e => {
+    const item = e.target.closest('.legend-item');
+    if (!item) return;
+    const idx = svgSeries.findIndex(s => s.name === item.dataset.name);
+    highlightSeries(idx, false);
+  });
+  legend.addEventListener('mouseleave', () => highlightSeries(-1, false));
 
   svg._hoverState = { W, H, ML, MT, MB, PW, svgSeries, lineEls, overlay, clearOverlay, showHover };
   if (!svg._hoverBound) {

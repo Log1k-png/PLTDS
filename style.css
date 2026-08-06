@@ -216,15 +216,24 @@ a:hover {
   gap: 1rem;
 }
 
-/* ===== Played today strip ===== */
+/* ===== Played today strips ===== */
+.board-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .played-today {
-  grid-column: 1 / -1;
+  text-align: center;
   padding: 0.55rem 0.85rem;
   border: 1px solid var(--border-dim);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+.played-today .pt-line {
+  display: block;
 }
 .played-today .pt-count {
   font-weight: 900;
@@ -686,6 +695,16 @@ tr.highlighted .user-cell {
 
 .chart-legend .legend-item:hover {
   opacity: 0.75;
+}
+
+.chart-legend .legend-item.highlighted {
+  opacity: 1;
+  font-weight: 700;
+  color: var(--text);
+}
+.chart-legend .legend-item.highlighted .swatch {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 1px;
 }
 
 .chart-legend .legend-item.hidden-line {
