@@ -1314,16 +1314,29 @@ function drawLineChart(svg, days, allSeries, getValues) {
   });
 
   const lineEls = [];
+  const isIsolated = (values, i) => {
+    if (values[i] === null) return false;
+    return values[i - 1] === null && values[i + 1] === null;
+  };
   series.forEach(s => {
     let d = '';
+    const points = [];
     s.values.forEach((v, i) => {
       if (v === null) return;
+      points.push([xAt(i), yAt(v)]);
       d += (d ? ' L' : 'M') + xAt(i).toFixed(1) + ' ' + yAt(v).toFixed(1);
     });
-    if (!d) return;
-    const path = svgEl('path', { d, class: 'data-line', stroke: s.color });
-    svg.appendChild(path);
-    lineEls.push(path);
+    if (d) {
+      const path = svgEl('path', { d, class: 'data-line', stroke: s.color });
+      svg.appendChild(path);
+      lineEls.push(path);
+    }
+    // Isolated points (no line segment through them) get a visible dot.
+    s.values.forEach((v, i) => {
+      if (!isIsolated(s.values, i)) return;
+      const [cx, cy] = [xAt(i), yAt(v)];
+      svg.appendChild(svgEl('circle', { cx, cy, r: 3.5, class: 'data-dot', fill: s.color }));
+    });
   });
 
   if (avgVisible) {

@@ -699,6 +699,11 @@ tr.highlighted .user-cell {
   stroke-width: 1.5;
 }
 
+.chart-block svg .data-dot {
+  stroke: #0b1218;
+  stroke-width: 1.5;
+}
+
 .chart-block svg text.hover-value {
   font-size: 10px;
   font-weight: 700;
