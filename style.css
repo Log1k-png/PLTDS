@@ -126,6 +126,41 @@ a:hover {
   cursor: not-allowed;
 }
 
+.btn.danger.refresh-btn {
+  background: var(--danger);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  height: auto;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn.danger.refresh-btn svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.btn.danger.refresh-btn:hover {
+  background: #ff6a74;
+  color: #fff;
+}
+.btn.danger.refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.refresh-btn.refreshing {
+  animation: refresh-pulse 1.2s ease-in-out infinite;
+}
+@keyframes refresh-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 /* ===== Content ===== */
 .content {
   flex: 1;
@@ -506,6 +541,12 @@ tr.highlighted .user-cell {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--gold);
+}
+
+.charts-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .chart-show-btn {

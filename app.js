@@ -33,6 +33,8 @@ const CHART_TITLES = {
 let chartCache = {}; // { 'season-difficulty': data } — persists until page refresh
 let chartsVisible = false;
 let chartHidden = new Set(); // player names (or '__avg__') toggled off via legend
+let forceRefreshAllPending = false; // when true, day-top fetches bypass the worker cache (?refresh=1)
+let refreshPending = false; // guards against concurrent refreshAll() runs
 
 /* ===== DOM Elements ===== */
 const els = {
@@ -44,6 +46,7 @@ const els = {
   seasonPrev: document.getElementById('season-prev'),
   seasonNext: document.getElementById('season-next'),
   seasonDisplay: document.getElementById('season-display'),
+  refreshBtn: document.getElementById('refresh-btn'),
   input: document.getElementById('username-input'),
   searchBtn: document.getElementById('search-btn'),
   clearSearchBtn: document.getElementById('clear-search-btn'),
@@ -176,6 +179,7 @@ async function fetchDayEntries(dayNumber, difficulty) {
   const params = { limit: -1 };
   const tracked = loadTracked();
   if (tracked.length > 0) params.users = tracked.join(',');
+  if (forceRefreshAllPending) params.refresh = '1';
   const data = await apiGet(`/leaderboards/day/${dayNumber}/${difficulty}/top`, params);
   return Array.isArray(data.entries) ? data.entries : [];
 }
@@ -205,6 +209,41 @@ async function loadRecentScores(force = false) {
   ]);
   todayScores = today;
   yesterdayScores = yesterday;
+}
+
+/* ===== Manual refresh ===== */
+async function refreshAll() {
+  if (!refreshPending && els.refreshBtn) {
+    forceRefreshAllPending = true;
+    refreshPending = true;
+    els.refreshBtn.disabled = true;
+    els.refreshBtn.classList.add('refreshing');
+    try {
+      if (activeSeason) {
+        liveScores[activeSeason] = {};
+        await fetchAllTrackedScores(activeSeason);
+      }
+      chartCache = {};
+      chartData = null;
+      if (chartsVisible) {
+        await fetchCurrentDay();
+        await loadRecentScores(true);
+        renderAllTables();
+        await loadCharts();
+      } else {
+        currentDay = await fetchCurrentDay();
+        await loadRecentScores(true);
+      }
+      renderAllTables();
+    } catch (err) {
+      console.warn('Impossible de rafraîchir:', err);
+    } finally {
+      forceRefreshAllPending = false;
+      refreshPending = false;
+      els.refreshBtn.disabled = false;
+      els.refreshBtn.classList.remove('refreshing');
+    }
+  }
 }
 
 /* ===== Live Score Fetching ===== */
@@ -1007,14 +1046,23 @@ function fetchSeasonDaySeries(season, difficulty, onProgress) {
   let done = 0;
   const total = days.length;
 
-  return Promise.all(days.map(day =>
-    fetchDayEntries(day, difficulty)
-      .catch(() => [])
-      .finally(() => {
-        done++;
-        if (onProgress) onProgress(done, total);
-      })
-  )).then(results => {
+  // Today and yesterday tops are already loaded on page load (todayScores /
+  // yesterdayScores). Reuse them on the current season instead of refetching.
+  const maps = {
+    [currentDay]: todayScores,
+    [currentDay - 1]: yesterdayScores,
+  };
+
+  return Promise.all(days.map(day => {
+    const reusable = (season === currentSeason && maps[day]) ? maps[day][difficulty] : null;
+    const promise = reusable
+      ? Promise.resolve([...reusable.values()])
+      : fetchDayEntries(day, difficulty).catch(() => []);
+    return promise.finally(() => {
+      done++;
+      if (onProgress) onProgress(done, total);
+    });
+  })).then(results => {
     const players = {};
     tracked.forEach(u => players[u] = {});
     results.forEach((entries, i) => {
@@ -1627,6 +1675,7 @@ document.querySelectorAll('#chart-avg-toggle button').forEach(btn => {
 
 els.seasonPrev.addEventListener('click', goToPrevSeason);
 els.seasonNext.addEventListener('click', goToNextSeason);
+if (els.refreshBtn) els.refreshBtn.addEventListener('click', refreshAll);
 
 let chartResizeTimer = null;
 window.addEventListener('resize', () => {

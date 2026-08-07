@@ -130,7 +130,10 @@
       <button id="charts-toggle-btn" class="btn primary chart-show-btn" type="button">Afficher les graphiques d'évolution</button>
       <section id="charts-section" class="charts-section hidden">
         <div class="charts-header">
-          <h2>Évolution</h2>
+          <div class="charts-title-row">
+            <h2>Évolution</h2>
+            <button id="refresh-btn" class="btn small danger refresh-btn" type="button" title="Les données plus anciennes qu'hier peuvent être issues du cache. Cliquer pour forcer une actualisation." aria-label="Actualiser les données"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></button>
+          </div>
           <div class="chart-controls">
             <div class="chart-toggle" id="chart-diff-toggle">
               <button data-difficulty="facile" class="active" type="button">Abordable</button>
