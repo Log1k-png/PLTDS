@@ -283,6 +283,12 @@ a:hover {
   .boards {
     grid-template-columns: 1fr 1fr;
   }
+  .played-today {
+    min-height: 5.6rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
 }
 
 .board {
