@@ -171,6 +171,95 @@ a:hover {
   50% { opacity: 0.45; }
 }
 
+/* ===== Charts header kebab menu ===== */
+.chart-menu {
+  position: relative;
+  display: inline-flex;
+  margin-left: auto;
+}
+.chart-menu-btn {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.chart-menu-btn:hover {
+  background: var(--primary-dim);
+  border-color: rgba(42, 221, 243, 0.5);
+  color: var(--text);
+}
+.chart-menu-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chart-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 12rem;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.chart-menu-dropdown[hidden] {
+  display: none;
+}
+.chart-menu-item {
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.5rem 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  transition: background 0.2s, color 0.2s;
+}
+.chart-menu-item:hover {
+  background: var(--primary-dim);
+  color: var(--text);
+}
+.chart-menu-item svg {
+  flex: none;
+}
+.chart-menu-item.refresh-btn {
+  color: var(--danger);
+}
+.chart-menu-item.refresh-btn:hover {
+  background: var(--danger-dim);
+  color: var(--danger);
+}
+.chart-menu-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.csv-feedback {
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 700;
+  order: 1;
+}
+
 /* ===== Content ===== */
 .content {
   flex: 1;
@@ -298,6 +387,9 @@ a:hover {
     display: flex;
     flex-direction: column;
     justify-content: center;
+  }
+  .chart-controls .chart-toggle {
+    flex: 1 1 0;
   }
 }
 
@@ -547,11 +639,21 @@ tr.highlighted .user-cell {
 .charts-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
-
+.charts-header .charts-title-row {
+  order: 1;
+  flex: 1 1 auto;
+}
+.charts-header .chart-menu {
+  order: 1;
+  margin-left: auto;
+}
+.charts-header .chart-controls {
+  order: 2;
+  width: 100%;
+}
 .charts-header h2 {
   margin: 0;
   font-size: 1.1rem;
@@ -608,6 +710,7 @@ tr.highlighted .user-cell {
   padding: 0.35rem 0.75rem;
   border-radius: var(--radius-sm);
   transition: background 0.2s, color 0.2s;
+  flex: 1;
 }
 
 .chart-toggle button.active {
@@ -639,6 +742,7 @@ tr.highlighted .user-cell {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  justify-content: space-between;
 }
 
 .copy-chart-btn {
@@ -652,6 +756,20 @@ tr.highlighted .user-cell {
   padding: 0.2rem 0.55rem;
   border-radius: var(--radius-sm);
   transition: color 0.2s, border-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.copy-chart-btn svg,
+.chart-block .copy-chart-btn svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  background: none;
+  border: none;
+  border-radius: 0;
 }
 
 .copy-chart-btn:hover {

@@ -47,6 +47,7 @@ const els = {
   seasonNext: document.getElementById('season-next'),
   seasonDisplay: document.getElementById('season-display'),
   refreshBtn: document.getElementById('refresh-btn'),
+  exportCsvBtn: document.getElementById('export-csv-btn'),
   input: document.getElementById('username-input'),
   searchBtn: document.getElementById('search-btn'),
   clearSearchBtn: document.getElementById('clear-search-btn'),
@@ -784,6 +785,50 @@ function downloadPng(blob, filename) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadCsv(filename, header, rows) {
+  const esc = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [header.map(esc).join(',')];
+  rows.forEach(r => lines.push(r.map(esc).join(',')));
+  const csv = '\uFEFF' + lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  downloadPng(blob, filename);
+}
+
+function exportEvolutionCsv() {
+  const feedback = document.getElementById('csv-feedback');
+  if (!chartData || !chartData.players || !chartData.days) {
+    flashFeedback(feedback, 'Les graphiques n\u2019ont pas encore été chargés.', 3500);
+    return;
+  }
+  const players = Object.keys(chartData.players);
+  if (players.length === 0) {
+    flashFeedback(feedback, 'Aucun joueur à exporter.', 3500);
+    return;
+  }
+  const diffLabel = chartDifficulty === 'facile' ? 'abordable' : 'expert';
+  const filename = `pltds-evolution-saison-${chartData.season}-${diffLabel}.csv`;
+
+  const dayToIso = day => {
+    if (!firstDayDate) return String(day);
+    const d = new Date(new Date(firstDayDate).getTime() + (day - 1) * 86400000);
+    return d.toISOString().slice(0, 10);
+  };
+
+  const header = ['Jour', 'Pseudo', 'Score', 'Bonnes réponses'];
+  const rows = [];
+  chartData.days.forEach(day => {
+    players.forEach(username => {
+      const entry = chartData.players[username][day];
+      rows.push([dayToIso(day), username, entry ? entry.score : '', entry ? entry.correctCount : '']);
+    });
+  });
+
+  downloadCsv(filename, header, rows);
 }
 
 const CHART_IMG_BG = '#181f26';
@@ -1689,6 +1734,32 @@ document.querySelectorAll('#chart-avg-toggle button').forEach(btn => {
 els.seasonPrev.addEventListener('click', goToPrevSeason);
 els.seasonNext.addEventListener('click', goToNextSeason);
 if (els.refreshBtn) els.refreshBtn.addEventListener('click', refreshAll);
+if (els.exportCsvBtn) els.exportCsvBtn.addEventListener('click', exportEvolutionCsv);
+
+/* Charts header kebab menu */
+const chartMenuBtn = document.getElementById('chart-menu-btn');
+const chartMenuDropdown = document.getElementById('chart-menu-dropdown');
+function toggleChartMenu(open) {
+  if (!chartMenuBtn || !chartMenuDropdown) return;
+  const shouldOpen = open === undefined ? chartMenuDropdown.hidden : open;
+  chartMenuDropdown.hidden = !shouldOpen;
+  chartMenuBtn.setAttribute('aria-expanded', String(!!shouldOpen));
+}
+if (chartMenuBtn && chartMenuDropdown) {
+  chartMenuBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleChartMenu();
+  });
+  document.addEventListener('click', () => toggleChartMenu(false));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') toggleChartMenu(false);
+  });
+  chartMenuDropdown.querySelectorAll('.chart-menu-item').forEach(item => {
+    item.addEventListener('click', e => e.stopPropagation());
+  });
+} else if (chartMenuBtn) {
+  chartMenuBtn.disabled = true;
+}
 
 let chartResizeTimer = null;
 window.addEventListener('resize', () => {
