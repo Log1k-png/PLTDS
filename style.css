@@ -486,6 +486,16 @@ a:hover {
   gap: 0.6rem;
 }
 
+.copy-board-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.copy-board-btn svg {
+  flex: none;
+}
+
 /* ===== Table ===== */
 .table-wrap {
   overflow-x: auto;
