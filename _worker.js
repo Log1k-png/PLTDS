@@ -166,6 +166,20 @@ export default {
       ? '/'
       : url.pathname.replace(/\/+$/, '') || '/';
     if (ALLOWED_STATIC.has(normalized) || ALLOWED_STATIC.has(normalized + '/index.html')) {
+      // Sitemap et robots.txt : renvoyer une reponse explicite, bien identifiable
+      // par les crawlers (Content-Type, Vary: Accept-Encoding, cache positif).
+      // Le passthrough brut via env.ASSETS.fetch ne fournit pas toujours
+      // l'en-tete Vary, ce qui peut faire echouer la lecture du sitemap dans GSC.
+      if (normalized === '/sitemap.xml' || normalized === '/robots.txt') {
+        const asset = await env.ASSETS.fetch(request);
+        const body = await asset.arrayBuffer();
+        const isXml = normalized === '/sitemap.xml';
+        const headers = new Headers(asset.headers);
+        headers.set('content-type', isXml ? 'application/xml; charset=utf-8' : 'text/plain; charset=utf-8');
+        headers.set('cache-control', 'public, max-age=3600');
+        headers.set('vary', 'Accept-Encoding');
+        return new Response(body, { status: asset.status, statusText: asset.statusText, headers });
+      }
       return env.ASSETS.fetch(request);
     }
     return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
