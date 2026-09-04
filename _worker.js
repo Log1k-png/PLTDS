@@ -125,7 +125,7 @@ export default {
         } catch (err) {
           resp = new Response(JSON.stringify({ error: 'Proxy error', message: err.message }), {
             status: 502,
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
           });
         }
       } else {
@@ -149,7 +149,7 @@ export default {
         } catch (err) {
           resp = new Response(JSON.stringify({ error: 'Proxy error', message: err.message }), {
             status: 502,
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
           });
         }
       }
@@ -168,6 +168,6 @@ export default {
     if (ALLOWED_STATIC.has(normalized) || ALLOWED_STATIC.has(normalized + '/index.html')) {
       return env.ASSETS.fetch(request);
     }
-    return new Response('Not found', { status: 404 });
+    return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   }
 };

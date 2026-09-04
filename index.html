@@ -51,6 +51,9 @@
     }
   }
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -92,7 +95,7 @@
             <h2>Niveau Abordable</h2>
             <span class="board-actions">
               <span id="abordable-stats" class="board-stats"></span>
-              <button class="btn small copy-board-btn" data-difficulty="facile" title="Copier le classement dans le presse-papiers">Copier</button>
+              <button class="btn small copy-board-btn" data-difficulty="facile" title="Copier le classement dans le presse-papiers" aria-label="Copier le classement Niveau Abordable">Copier</button>
               <span class="copy-feedback hidden">Copié !</span>
             </span>
           </div>
@@ -102,6 +105,7 @@
           </div>
           <div id="abordable-table-wrap" class="table-wrap hidden">
             <table>
+              <caption class="sr-only">Classement Niveau Abordable</caption>
               <thead>
                 <tr>
                   <th class="col-rank">#</th>
@@ -125,7 +129,7 @@
             <h2>Niveau Expert</h2>
             <span class="board-actions">
               <span id="expert-stats" class="board-stats"></span>
-              <button class="btn small copy-board-btn" data-difficulty="difficile" title="Copier le classement dans le presse-papiers">Copier</button>
+              <button class="btn small copy-board-btn" data-difficulty="difficile" title="Copier le classement dans le presse-papiers" aria-label="Copier le classement Niveau Expert">Copier</button>
               <span class="copy-feedback hidden">Copié !</span>
             </span>
           </div>
@@ -135,6 +139,7 @@
           </div>
           <div id="expert-table-wrap" class="table-wrap hidden">
             <table>
+              <caption class="sr-only">Classement Niveau Expert</caption>
               <thead>
                 <tr>
                   <th class="col-rank">#</th>
@@ -196,7 +201,7 @@
         <div class="bottom-card search-part">
           <h2>Ajouter des joueurs</h2>
           <p class="sub">Entrez un ou plusieurs pseudonymes (un par ligne ou séparés par des virgules).</p>
-          <textarea id="username-input" rows="4"></textarea>
+          <textarea id="username-input" rows="4" aria-label="Pseudonyme(s) à rechercher"></textarea>
           <div class="search-actions">
             <button id="search-btn" class="btn primary">Rechercher</button>
             <button id="clear-search-btn" class="btn secondary">Effacer</button>
