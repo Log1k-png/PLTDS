@@ -32,23 +32,35 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "La Table Des Scores",
-    "url": "https://pltds.pages.dev/",
-    "description": "Créez et partagez votre classement privé pour La Table des Savoirs. Suivez les scores de vos amis et consultez les graphiques d'évolution.",
-    "applicationCategory": "GameApplication",
-    "operatingSystem": "Any",
-    "inLanguage": "fr",
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "EUR"
-    },
-    "about": {
-      "@type": "Thing",
-      "name": "La Table des Savoirs",
-      "url": "https://latabledessavoirs.fr"
-    }
+    "@graph": [
+      {
+        "@id": "https://pltds.pages.dev/#app",
+        "@type": "WebApplication",
+        "name": "La Table Des Scores",
+        "url": "https://pltds.pages.dev/",
+        "description": "Créez et partagez votre classement privé pour La Table des Savoirs. Suivez les scores de vos amis et consultez les graphiques d'évolution.",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Any",
+        "inLanguage": "fr",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "EUR"
+        },
+        "about": {
+          "@id": "https://latabledessavoirs.fr/#game"
+        },
+        "isRelatedTo": {
+          "@id": "https://latabledessavoirs.fr/#game"
+        }
+      },
+      {
+        "@id": "https://latabledessavoirs.fr/#game",
+        "@type": "Organization",
+        "name": "La Table des Savoirs",
+        "url": "https://latabledessavoirs.fr"
+      }
+    ]
   }
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -235,10 +247,14 @@
 
     <footer class="site-footer">
       <p>
-        Site statique non officiel et indépendant, créé par un joueur.
-        Données de classement fournies par l'API publique de
-        <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">La Table des Savoirs</a>
-        (ZQSD PRODUCTIONS).
+        La Table des Savoirs est un quiz quotidien de culture générale développé par
+        ZQSD PRODUCTIONS, disponible sur
+        <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">latabledessavoirs.fr</a>.
+      </p>
+      <p>
+        Ce site statique non officiel et indépendant, créé par un joueur, vous permet de
+        suivre l'évolution de vos scores et d'établir vos propres classements privés.
+        Les données de classement sont fournies par l'API publique de La Table des Savoirs.
         Ce site n'est pas affilié, approuvé ni exploité par les créateurs du jeu.
       </p>
       <p class="footer-links">
