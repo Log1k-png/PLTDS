@@ -51,14 +51,12 @@ const els = {
   input: document.getElementById('username-input'),
   searchBtn: document.getElementById('search-btn'),
   clearSearchBtn: document.getElementById('clear-search-btn'),
-  status: document.getElementById('search-status'),
   results: document.getElementById('search-results'),
   clearBtn: document.getElementById('clear-btn'),
   playerList: document.getElementById('player-list'),
   playedFacile: document.getElementById('played-facile'),
   playedDifficile: document.getElementById('played-difficile'),
   shareBtn: document.getElementById('share-btn'),
-  shareFeedback: document.getElementById('share-feedback'),
   abordableStats: document.getElementById('abordable-stats'),
   expertStats: document.getElementById('expert-stats'),
   chartsSection: document.getElementById('charts-section'),
@@ -341,9 +339,48 @@ async function addPlayer(entry, difficulty) {
 }
 
 /* ===== Rendering ===== */
-function setStatus(msg, type = '') {
-  els.status.textContent = msg;
-  els.status.className = 'search-status ' + type;
+
+/* ===== Toasts ===== */
+const TOAST_DEFAULT_MS = 3000;
+const TOAST_ERROR_MS = 4500;
+
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast--${type}`;
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+  const text = document.createElement('span');
+  text.className = 'toast-message';
+  text.textContent = message;
+
+  const close = document.createElement('button');
+  close.className = 'toast-close';
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Fermer');
+  close.textContent = '\u00D7';
+  close.addEventListener('click', () => dismissToast(toast));
+
+  toast.appendChild(text);
+  toast.appendChild(close);
+  container.appendChild(toast);
+
+  const duration = type === 'error' ? TOAST_ERROR_MS : TOAST_DEFAULT_MS;
+  toast._timer = setTimeout(() => dismissToast(toast), duration);
+}
+
+function dismissToast(toast) {
+  if (!toast || toast._dismissed) return;
+  toast._dismissed = true;
+  clearTimeout(toast._timer);
+  toast.classList.add('toast--leaving');
+  toast.addEventListener('transitionend', () => {
+    if (toast.parentNode) toast.parentNode.removeChild(toast);
+  }, { once: true });
+  toast.addEventListener('animationend', () => {
+    if (toast.parentNode) toast.parentNode.removeChild(toast);
+  }, { once: true });
 }
 
 function createResultCard(entry, difficulty) {
@@ -640,7 +677,7 @@ async function runSearch() {
     .filter(s => s.length > 0);
 
   if (usernames.length === 0) {
-    setStatus('Veuillez entrer au moins un pseudonyme.', 'error');
+    showToast('Veuillez entrer au moins un pseudonyme.', 'error');
     return;
   }
 
@@ -660,10 +697,10 @@ async function runSearch() {
     }
     renderResults(allResults);
     const total = allResults.facile.length + allResults.difficile.length;
-    setStatus(`${total} résultat(s) trouvé(s).`, 'success');
+    showToast(`${total} résultat(s) trouvé(s).`, 'success');
   } catch (err) {
     console.error(err);
-    setStatus(`Erreur : ${err.message}`, 'error');
+    showToast(`Erreur : ${err.message}`, 'error');
   } finally {
     hideSpinner();
     els.searchBtn.disabled = false;
@@ -762,7 +799,7 @@ async function autoLoadFromUrl() {
   }
   renderAllTables();
   hideSpinner();
-  setStatus(`${usernames.length} joueur(s) chargé(s).`, 'success');
+  showToast(`${usernames.length} joueur(s) chargé(s).`, 'success');
 }
 
 function writeClipboard(text) {
@@ -800,14 +837,13 @@ function downloadCsv(filename, header, rows) {
 }
 
 function exportEvolutionCsv() {
-  const feedback = document.getElementById('csv-feedback');
   if (!chartData || !chartData.players || !chartData.days) {
-    flashFeedback(feedback, 'Les graphiques n\u2019ont pas encore été chargés.', 3500);
+    showToast('Les graphiques n\u2019ont pas encore été chargés.', 'error');
     return;
   }
   const players = Object.keys(chartData.players);
   if (players.length === 0) {
-    flashFeedback(feedback, 'Aucun joueur à exporter.', 3500);
+    showToast('Aucun joueur à exporter.', 'error');
     return;
   }
   const diffLabel = chartDifficulty === 'facile' ? 'abordable' : 'expert';
@@ -973,7 +1009,6 @@ function renderChartBlob(svg, title, caption) {
 }
 
 function copyChartAsImage(svg, title) {
-  const feedback = svg.parentNode.querySelector('.copy-chart-btn + .copy-feedback');
   const season = allSeasons.find(s => s.number === activeSeason);
   const caption = season ? `Saison ${activeSeason} — ${season.name}` : `Saison ${activeSeason}`;
 
@@ -989,45 +1024,38 @@ function copyChartAsImage(svg, title) {
 
   if (supportsImageCopy()) {
     navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })])
-      .then(() => flashFeedback(feedback, 'Image copiée !'))
+      .then(() => showToast('Image copiée !'))
       .catch(async err => {
         console.warn('Copie d\'image échouée:', err);
         const blob = await blobPromise.catch(() => null);
         if (blob) {
           downloadPng(blob, `pltds-${title.toLowerCase()}.png`);
-          flashFeedback(feedback, 'Image téléchargée');
-          setStatus(`Impossible de copier l'image sur ce navigateur (${(err && err.name) || 'erreur'}). L'image a été téléchargée à la place.`, 'error');
+          showToast('Image téléchargée', 'info');
+          showToast(`Impossible de copier l'image sur ce navigateur (${(err && err.name) || 'erreur'}). L'image a été téléchargée à la place.`, 'error');
         } else {
-          flashFeedback(feedback, 'Erreur !');
+          showToast('Erreur !', 'error');
         }
       });
   } else {
     blobPromise
       .then(blob => {
         downloadPng(blob, `pltds-${title.toLowerCase()}.png`);
-        flashFeedback(feedback, 'Image téléchargée');
+        showToast('Image téléchargée', 'info');
       })
-      .catch(() => flashFeedback(feedback, 'Erreur !'));
+      .catch(() => showToast('Erreur !', 'error'));
   }
-}
-
-function flashFeedback(el, text, duration = 1500) {
-  if (!el) return;
-  el.textContent = text;
-  el.classList.remove('hidden');
-  clearTimeout(el._timer);
-  el._timer = setTimeout(() => el.classList.add('hidden'), duration);
 }
 
 function shareLeaderboard() {
   const url = generateShareUrl();
   if (!url) {
-    setStatus('Aucun joueur à partager.', 'error');
+    showToast('Aucun joueur à partager.', 'error');
     return;
   }
   writeClipboard(url)
-    .then(() => flashFeedback(els.shareFeedback, 'Lien copié !'))
+    .then(() => showToast('Lien copié !'))
     .catch(() => {
+      showToast('Presse-papiers indisponible. Copiez le lien dans la boîte de dialogue.', 'error');
       prompt('Copiez ce lien :', url);
     });
 }
@@ -1036,11 +1064,9 @@ function copyScoreboard(difficulty) {
   const label = difficulty === 'facile' ? 'Niveau Abordable' : 'Niveau Expert';
   const t = tables[difficulty];
   if (t.wrap.classList.contains('hidden')) {
-    setStatus('Aucun joueur à copier.', 'error');
+    showToast('Aucun joueur à copier.', 'error');
     return;
   }
-
-  const feedback = document.querySelector(`.copy-board-btn[data-difficulty="${difficulty}"] + .copy-feedback`);
 
   const visible = el => el.offsetParent !== null;
   const isDay = el => el.classList.contains('col-today') || el.classList.contains('today-cell') || el.classList.contains('yesterday-cell');
@@ -1062,8 +1088,9 @@ function copyScoreboard(difficulty) {
   ].join('\n');
 
   writeClipboard(text)
-    .then(() => flashFeedback(feedback, 'Copié !'))
+    .then(() => showToast('Copié !'))
     .catch(() => {
+      showToast('Presse-papiers indisponible. Copiez le texte dans la boîte de dialogue.', 'error');
       prompt('Copiez ce texte :', text);
     });
 }
@@ -1681,7 +1708,6 @@ els.searchBtn.addEventListener('click', runSearch);
 els.clearSearchBtn.addEventListener('click', () => {
   els.input.value = '';
   els.results.innerHTML = '';
-  setStatus('');
 });
 els.input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.ctrlKey) runSearch();
