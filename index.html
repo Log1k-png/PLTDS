@@ -15,17 +15,42 @@
   <meta property="og:title" content="La Table Des Scores - Leaderboard Privée">
   <meta property="og:description" content="Créez et partagez votre classement privé pour La Table des Savoirs.">
   <meta property="og:image" content="https://pltds.pages.dev/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="fr_FR">
 
   <!-- Twitter -->
-  <meta property="twitter:card" content="summary_large_image">
-  <meta property="twitter:url" content="https://pltds.pages.dev/">
-  <meta property="twitter:title" content="La Table Des Scores - Leaderboard Privée">
-  <meta property="twitter:description" content="Créez et partagez votre classement privé pour La Table des Savoirs.">
-  <meta property="twitter:image" content="https://pltds.pages.dev/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://pltds.pages.dev/">
+  <meta name="twitter:title" content="La Table Des Scores - Classement Privé">
+  <meta name="twitter:description" content="Créez et partagez votre classement privé pour La Table des Savoirs.">
+  <meta name="twitter:image" content="https://pltds.pages.dev/og-image.png">
 
   <link rel="canonical" href="https://pltds.pages.dev/">
   <link rel="icon" type="image/png" href="/favicon.png">
-  <title>La Table Des Scores - Leaderboard Privée pour La Table des Savoirs</title>
+  <title>La Table Des Scores - Classement Privé pour La Table des Savoirs</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "La Table Des Scores",
+    "url": "https://pltds.pages.dev/",
+    "description": "Créez et partagez votre classement privé pour La Table des Savoirs. Suivez les scores de vos amis et consultez les graphiques d'évolution.",
+    "applicationCategory": "GameApplication",
+    "operatingSystem": "Any",
+    "inLanguage": "fr",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "EUR"
+    },
+    "about": {
+      "@type": "Thing",
+      "name": "La Table des Savoirs",
+      "url": "https://latabledessavoirs.fr"
+    }
+  }
+  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -33,7 +58,8 @@
     <header class="site-header">
       <div class="header-inner">
         <h1>La Table Des Scores</h1>
-        <p class="tagline">Leaderboard privée pour <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">La Table des Savoirs</a></p>
+        <p class="tagline">Classement privée pour <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">La Table des Savoirs</a></p>
+        <p class="tagline">Suivez les scores de vos amis et comparez vos classements</p>
         <div class="season-nav">
           <button id="season-prev" class="season-arrow" aria-label="Saison précédente">&#9664;</button>
           <span id="season-display" class="season-display">Chargement…</span>
@@ -208,6 +234,6 @@
     </footer>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
