@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
-Sitemap: https://pltds.pages.dev/sitemap.xml
+Sitemap: https://latabledesscores.adrienchamussy.com/sitemap.xml
