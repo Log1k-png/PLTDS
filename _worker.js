@@ -25,6 +25,7 @@ const ALLOWED_STATIC = new Set([
 ]);
 
 const DAY_CACHE_TTL = 60 * 60 * 24 * 7; // 7 jours (secondes)
+const RECENT_CACHE_TTL = 60 * 60 * 2; // 2 heures (secondes) pour aujourd'hui et hier
 const CACHE_AFTER_DAYS = 2; // on ne cache que les jours finis depuis >= 2 jours
 const PROGRESS_TTL_MS = 60 * 1000; // memoisation de /seasons/progress
 
@@ -51,6 +52,39 @@ async function getCurrentDay() {
     // En cas d'echec, pas de cache : la reponse est passee telle quelle.
   }
   return null;
+}
+
+/**
+ * Decide si une reponse en cache doit etre servie telle quelle.
+ *
+ * Pour le top d'AUJOURD'HUI demande avec `users`, on ne sert la reponse en
+ * cache que si chaque joueur demande y est present. Si un joueur est absent
+ * (il vient de jouer, sa note n'etait pas encore en cache), on refuse de
+ * servir le cache : le handler ira chercher des donnees fraiches ("refresh
+ * bloquant"). Le top d'hier et les jours plus anciens n'ont pas ce controle
+ * (hier est clos et immuable, les jours anciens sont figes).
+ */
+async function shouldServeCached(cached, recentCache, dayNum, currentDay, usersParam) {
+  // Refuser de servir en cas de reponse d'erreur en cache.
+  if (!cached.ok) return false;
+
+  // Le controle "joueur manquant" ne concerne que le top d'aujourd'hui,
+  // et uniquement quand une liste `users` est fournie.
+  if (!(recentCache && dayNum === currentDay && usersParam)) return true;
+
+  try {
+    const body = await cached.clone().json();
+    const cachedUsers = new Set(
+      Array.isArray(body.entries) ? body.entries.map(e => e && e.username).filter(Boolean) : []
+    );
+    const wanted = usersParam.split(',').map(u => u.trim()).filter(Boolean);
+    // Si au moins un joueur demande est absent du cache, ne pas servir.
+    return wanted.every(u => cachedUsers.has(u));
+  } catch (err) {
+    // Impossible de parser la reponse en cache : on ne la sert pas
+    // (on retombe sur la recuperation directe).
+    return false;
+  }
 }
 
 export default {
@@ -82,24 +116,41 @@ export default {
         targetUrl.searchParams.set(key, value);
       });
 
-      // Un top du jour est mis en cache si le jour est fini depuis >= 2 jours.
+      // Parametre `users` : liste de pseudonymes a renvoyer (filtre cote serveur).
+      const usersParam = url.searchParams.get('users');
+
+      // Cache d'un top du jour :
+      //   - jours anciens (>= 2 jours) : TTL 7 jours, sans controle particulier.
+      //   - hier : TTL 2 heures (jour clos, immuable).
+      //   - aujourd'hui : TTL 2 heures, MAIS si un joueur demande (`users`) est
+      //     absent de la reponse en cache (il vient de jouer), on rafraichit de
+      //     maniere bloquante et on renvoie des donnees fraiches.
       const dayMatch = apiPath.match(/^leaderboards\/day\/(\d+)\/(facile|difficile)\/top$/);
       let cacheKey = null;
+      let recentCache = false;
       if (dayMatch) {
         const dayNum = parseInt(dayMatch[1], 10);
         const currentDay = await getCurrentDay();
-        if (currentDay != null && dayNum <= currentDay - CACHE_AFTER_DAYS) {
-          cacheKey = new Request(url.toString(), request);
-          if (!fresh) {
-            const cached = await caches.default.match(cacheKey);
-            if (cached) return cached;
+        if (currentDay != null) {
+          if (dayNum <= currentDay - CACHE_AFTER_DAYS) {
+            // Jour ancien et clos depuis >= 2 jours.
+            cacheKey = new Request(url.toString(), request);
+          } else if (dayNum === currentDay - 1 || dayNum === currentDay) {
+            // Hier ou aujourd'hui : cache court (2h).
+            cacheKey = new Request(url.toString(), request);
+            recentCache = true;
+          }
+        }
+
+        if (cacheKey && !fresh) {
+          const cached = await caches.default.match(cacheKey);
+          if (cached) {
+            const serve = await shouldServeCached(cached, recentCache, dayNum, currentDay, usersParam);
+            if (serve) return cached;
           }
         }
       }
 
-      // Filtre cote serveur : si un parametre `users` est fourni sur un top du jour,
-      // on ne renvoie que les entrees correspondant a ces pseudonymes (reduit la bande passante).
-      const usersParam = url.searchParams.get('users');
       let resp;
       if (usersParam && apiPath.startsWith('leaderboards/day/') && apiPath.endsWith('/top')) {
         const wanted = new Set(usersParam.split(',').map(u => u.trim()).filter(Boolean));
@@ -155,7 +206,7 @@ export default {
       }
 
       if (cacheKey && resp.ok) {
-        resp.headers.set('cache-control', `public, max-age=${DAY_CACHE_TTL}`);
+        resp.headers.set('cache-control', `public, max-age=${recentCache ? RECENT_CACHE_TTL : DAY_CACHE_TTL}`);
         ctx.waitUntil(caches.default.put(cacheKey, resp.clone()));
       }
       return resp;
