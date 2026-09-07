@@ -383,6 +383,36 @@ function dismissToast(toast) {
   }, { once: true });
 }
 
+/* ===== Credits dialog ===== */
+function initCreditsDialog() {
+  const dialog = document.getElementById('credits-dialog');
+  const openBtn = document.getElementById('credits-btn');
+  const closeBtn = document.getElementById('credits-close-btn');
+  if (!dialog || !openBtn || !closeBtn) return;
+
+  openBtn.addEventListener('click', () => dialog.showModal());
+
+  function closeDialog() {
+    if (dialog.open) dialog.close();
+  }
+
+  closeBtn.addEventListener('click', closeDialog);
+
+  dialog.addEventListener('click', (e) => {
+    const rect = dialog.getBoundingClientRect();
+    const inside =
+      e.clientX >= rect.left && e.clientX <= rect.right &&
+      e.clientY >= rect.top && e.clientY <= rect.bottom;
+    if (!inside) closeDialog();
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initCreditsDialog);
+} else {
+  initCreditsDialog();
+}
+
 function createResultCard(entry, difficulty) {
   const card = document.createElement('div');
   card.className = 'result-card';

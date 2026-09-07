@@ -248,24 +248,65 @@
     </main>
 
     <footer class="site-footer">
-      <p>
-        La Table des Savoirs est un quiz quotidien de culture générale développé par
-        ZQSD PRODUCTIONS, disponible sur
-        <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">latabledessavoirs.fr</a>.
-      </p>
-      <p>
-        Ce site statique non officiel et indépendant, créé par un joueur, vous permet de
-        suivre l'évolution de vos scores et d'établir vos propres classements privés.
-        Les données de classement sont fournies par l'API publique de La Table des Savoirs.
-        Ce site n'est pas affilié, approuvé ni exploité par les créateurs du jeu.
-      </p>
       <p class="footer-links">
         <a href="https://github.com/Log1k-png/PLTDS" target="_blank" rel="noopener">Code source sur GitHub</a>
         &middot;
         <a href="https://github.com/Log1k-png/PLTDS/issues" target="_blank" rel="noopener">Signaler un problème</a>
+        &middot;
+        <a target="_blank" rel="noopener noreferrer" href="mailto:latabledesscores@adrienchamussy.com">latabledesscores@adrienchamussy.com</a>
+        &middot;
+        <button id="credits-btn" class="credits-btn" type="button" aria-haspopup="dialog">Crédits</button>
       </p>
     </footer>
   </div>
+
+  <dialog id="credits-dialog" class="credits-dialog" aria-labelledby="credits-title">
+    <div class="credits-dialog-inner">
+      <div class="credits-header">
+        <h2 id="credits-title">Crédits</h2>
+        <p class="credits-subtitle">Icônes, police et contenus utilisés sur ce site.</p>
+      </div>
+      <div class="credits-body">
+        <section class="credits-section">
+          <h3 class="credits-section-title">Contenu</h3>
+          <div class="credits-item">
+            <span class="credits-item-name">
+              La Table des Savoirs, quiz quotidien de culture générale développé par
+              ZQSD PRODUCTIONS — disponible sur
+              <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">latabledessavoirs.fr</a>.
+            </span>
+            <span class="credits-item-detail">
+              Les données de classement sont fournies par son API publique. Ce site statique,
+              indépendant et créé par un joueur, n'est pas affilié, approuvé ni exploité par
+              les créateurs du jeu.
+            </span>
+          </div>
+        </section>
+        <section class="credits-section">
+          <h3 class="credits-section-title">Icônes, police et images</h3>
+          <div class="credits-item">
+            <span class="credits-item-name">Icônes — Lucide</span>
+            <span class="credits-item-detail">Licence ISC · <a href="https://lucide.dev/license" target="_blank" rel="noopener">lucide.dev/license</a></span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-item-name">Police — Lato, par Łukasz Dziedzic</span>
+            <span class="credits-item-detail">Licence SIL OFL 1.1 · <a href="https://fonts.google.com/specimen/Lato" target="_blank" rel="noopener">Google Fonts</a></span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-item-name">Emoji 🧠 (favicon et image de partage) — Google Noto Color Emoji</span>
+            <span class="credits-item-detail">Licence SIL OFL 1.1 · <a href="https://fonts.google.com/noto/specimen/Noto+Color+Emoji" target="_blank" rel="noopener">Google Fonts</a></span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-item-name">Icône podium (image de partage)</span>
+            <span class="credits-item-detail"><a href="https://www.flaticon.com/free-icons/podium" target="_blank" rel="noopener">Podium icons created by Magnific - Flaticon</a></span>
+          </div>
+        </section>
+      </div>
+      <div class="credits-footer">
+        <button id="credits-close-btn" class="btn primary" type="button">Fermer</button>
+      </div>
+    </div>
+  </dialog>
 
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
