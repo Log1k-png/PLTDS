@@ -276,17 +276,31 @@ async function fetchAllTrackedScores(season) {
   showSpinner(`Chargement des scores pour la saison ${season}…`);
   liveScores[season] = cached || {};
 
-  for (let i = 0; i < tracked.length; i++) {
-    const username = tracked[i];
-    if (liveScores[season][username]) continue;
-    updateSpinnerProgress(
-      `Chargement des scores… ${i + 1}/${tracked.length}`,
-      i + 1,
-      tracked.length
-    );
-    const scores = await fetchPlayerScores(username, season);
-    liveScores[season][username] = scores;
+  // Charge les pseudonymes manquants en parallele, avec un nombre maximal de
+  // telechargements simultanes (concurrence limitee a 4 pour ne pas surcharger
+  // l'API upstream). Chaque joueur effectue ses 2 requetes (facile + difficile)
+  // de maniere sequentielle, mais plusieurs joueurs progressent en parallele.
+  const pending = tracked.filter(u => !liveScores[season][u]);
+  const total = pending.length;
+  let done = 0;
+
+  async function worker() {
+    while (true) {
+      const username = pending.pop();
+      if (!username) return;
+      const scores = await fetchPlayerScores(username, season);
+      liveScores[season][username] = scores;
+      done++;
+      updateSpinnerProgress(
+        `Chargement des scores… ${done}/${total}`,
+        done,
+        total
+      );
+    }
   }
+
+  const concurrency = Math.min(4, total);
+  await Promise.all(Array.from({ length: concurrency }, worker));
 
   hideSpinner();
 }
