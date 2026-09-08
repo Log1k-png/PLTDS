@@ -1209,7 +1209,7 @@ function buildChartSeries(days, players, metric) {
       }
       const openToday = v === null && day === currentDay;
       cumArr.push(openToday ? null : cum);
-      dailyArr.push(v);
+      dailyArr.push(openToday ? null : (v === null ? 0 : v));
       avgArr.push(openToday ? null : (settled > 0 ? cum / settled : null));
     });
     return { name: username, cum: cumArr, daily: dailyArr, avg: avgArr };
