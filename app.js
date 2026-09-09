@@ -365,6 +365,7 @@ async function addPlayer(entry, difficulty) {
   // puis les fetches suivants remplissent les scores quelques instants plus tard.
   flashName = username;
   renderAllTables();
+  scrollPlayerListTo(username);
   showToast(`« ${username} » ajouté`, 'success');
 
   try {
@@ -458,58 +459,63 @@ if (document.readyState === 'loading') {
   initCreditsDialog();
 }
 
-function createResultCard(entry, difficulty) {
-  const card = document.createElement('div');
-  card.className = 'result-card';
+function createResultRow(entry, difficulty) {
+  const tr = document.createElement('tr');
   const diffLabel = DISPLAY_NAMES[difficulty];
   const already = loadTracked().includes(entry.username);
 
-  card.innerHTML = `
-    <div class="result-info">
-      <span class="result-name">${escapeHtml(entry.username)}</span>
-      <span class="result-meta">${diffLabel} — Saison ${activeSeason}</span>
-    </div>
-    <div>
-      <div class="result-score">${entry.score.toLocaleString('fr-FR')} pts</div>
-      <div class="result-rank">Rang #${entry.rank.toLocaleString('fr-FR')}</div>
-    </div>
-    <button class="btn add-btn${already ? ' result-added' : ' primary'}"${already ? ' disabled' : ''}>${already ? 'Déjà suivi ✓' : 'Ajouter'}</button>
+  tr.innerHTML = `
+    <td class="td-pseudo" title="${escapeHtml(entry.username)}"><span class="pseudo-inner">${escapeHtml(entry.username)}</span></td>
+    <td>${diffLabel}</td>
+    <td class="score-cell">${entry.score.toLocaleString('fr-FR')}</td>
+    <td class="rank-off-cell">#${entry.rank.toLocaleString('fr-FR')}</td>
+    <td><button class="btn small add-btn${already ? ' result-added' : ' primary'}"${already ? ' disabled' : ''}>${already ? 'Déjà suivi ✓' : 'Ajouter'}</button></td>
   `;
 
-  const btn = card.querySelector('.add-btn');
+  const btn = tr.querySelector('.add-btn');
   if (!already) {
+    // L'etat des lignes (Ajouter / Deja suivi) est resynchronise par
+    // updateResultRowStates() a chaque renderAllTables().
     btn.addEventListener('click', () => {
       addPlayer(entry, difficulty);
-      // Marque toutes les cartes du meme pseudo (facile + difficile) comme ajoutees.
-      document.querySelectorAll('.result-card').forEach(cardEl => {
-        if (cardEl.querySelector('.result-name').textContent !== entry.username) return;
-        const b = cardEl.querySelector('.add-btn');
-        if (b && !b.disabled) {
-          b.textContent = 'Déjà suivi ✓';
-          b.disabled = true;
-          b.classList.remove('primary');
-          b.classList.add('result-added');
-        }
-      });
     });
   }
-  return card;
+  return tr;
 }
 
 function renderResults(resultsMap) {
   els.results.innerHTML = '';
   let total = 0;
+  Object.values(resultsMap).forEach(list => { if (list) total += list.length; });
+
+  if (total === 0) {
+    els.results.innerHTML = '<p style="color:var(--text-muted);margin:0.4rem 0;">Aucun résultat trouvé.</p>';
+    return;
+  }
+
+  const table = document.createElement('table');
+  table.className = 'result-table';
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th class="col-pseudo">Pseudo</th>
+        <th>Niveau</th>
+        <th>Score</th>
+        <th>Rang</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector('tbody');
   for (const [difficulty, list] of Object.entries(resultsMap)) {
     if (list && list.length) {
-      total += list.length;
       list.forEach(entry => {
-        els.results.appendChild(createResultCard(entry, difficulty));
+        tbody.appendChild(createResultRow(entry, difficulty));
       });
     }
   }
-  if (total === 0) {
-    els.results.innerHTML = '<p style="color:var(--text-muted);margin:0.4rem 0;">Aucun résultat trouvé.</p>';
-  }
+  els.results.appendChild(table);
 }
 
 function compareByRank(a, b) {
@@ -656,16 +662,60 @@ function renderPlayerManager() {
   els.shareBtn.style.display = '';
   const sorted = [...tracked].sort((a, b) => a.localeCompare(b));
   sorted.forEach(username => {
-    const chip = document.createElement('span');
-    chip.className = 'player-chip' + (flashName === username ? ' flash' : '');
-    chip.innerHTML = `
-      ${escapeHtml(username)}
-      <button class="chip-remove" title="Retirer ${escapeHtml(username)}">&times;</button>
-    `;
-    chip.querySelector('.chip-remove').addEventListener('click', () => removeTrackedPlayer(username));
-    els.playerList.appendChild(chip);
+    const row = document.createElement('div');
+    row.className = 'player-row' + (flashName === username ? ' flash' : '');
+
+    const name = document.createElement('span');
+    name.className = 'player-name';
+    name.textContent = username;
+
+    const remove = document.createElement('button');
+    remove.className = 'player-remove';
+    remove.type = 'button';
+    remove.title = `Retirer ${username}`;
+    remove.setAttribute('aria-label', `Retirer ${username}`);
+    remove.textContent = '\u00D7';
+    remove.addEventListener('click', () => removeTrackedPlayer(username));
+
+    row.appendChild(name);
+    row.appendChild(remove);
+    els.playerList.appendChild(row);
   });
   flashName = null;
+}
+
+function scrollPlayerListTo(username) {
+  const list = els.playerList;
+  if (!list) return;
+  const row = Array.from(list.querySelectorAll('.player-row'))
+    .find(r => r.querySelector('.player-name').textContent === username);
+  if (!row) return;
+  const top = row.offsetTop - list.offsetTop;
+  const bottom = top + row.offsetHeight;
+  let target = null;
+  if (top < list.scrollTop) target = top;
+  else if (bottom > list.scrollTop + list.clientHeight) target = bottom - list.clientHeight;
+  if (target !== null) list.scrollTo({ top: target, behavior: 'smooth' });
+}
+
+function updateResultRowStates() {
+  const tracked = loadTracked();
+  document.querySelectorAll('.result-table .add-btn').forEach(b => {
+    const trEl = b.closest('tr');
+    if (!trEl) return;
+    const isTracked = tracked.includes(trEl.querySelector('.td-pseudo').textContent);
+    if (isTracked && !b.disabled) {
+      b.textContent = 'Déjà suivi ✓';
+      b.disabled = true;
+      b.classList.remove('primary');
+      b.classList.add('result-added');
+    } else if (!isTracked && b.disabled) {
+      b.textContent = 'Ajouter';
+      b.disabled = false;
+      b.classList.add('primary');
+      b.classList.remove('result-added');
+    }
+  });
 }
 
 function renderAllTables() {
@@ -674,6 +724,7 @@ function renderAllTables() {
   renderDifficultyTable('difficile');
   renderBoardStats();
   renderPlayerManager();
+  updateResultRowStates();
 }
 
 /* ===== Niveau Expert toggle ===== */

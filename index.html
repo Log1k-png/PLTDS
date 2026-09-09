@@ -240,24 +240,28 @@
 
       <!-- Bottom Section: Search + Player Manager -->
       <section class="bottom-section">
-        <div class="bottom-card search-part">
-          <h2>Ajouter des joueurs</h2>
-          <p class="sub">Entrez un ou plusieurs pseudonymes (un par ligne ou séparés par des virgules).</p>
-          <textarea id="username-input" rows="4" aria-label="Pseudonyme(s) à rechercher"></textarea>
-          <div class="search-actions">
-            <button id="search-btn" class="btn primary">Rechercher</button>
-            <button id="clear-search-btn" class="btn secondary">Effacer</button>
+        <div class="bottom-card combined">
+          <div class="bottom-card-header">
+            <h2>Joueurs</h2>
           </div>
-          <div id="search-results" class="search-results"></div>
-        </div>
-
-        <div class="bottom-card manager-part">
-          <h2>Modifier la liste</h2>
-          <p class="sub">Retirer des joueurs de votre classement.</p>
-          <div id="player-list" class="player-list"></div>
-          <div class="manager-actions">
-            <button id="share-btn" class="btn primary outline">Partager</button>
-            <button id="clear-btn" class="btn danger outline">Tout vider</button>
+          <div class="bottom-card-body">
+            <div class="bottom-pane pane-add">
+              <p class="sub">Entrez un ou plusieurs pseudonymes (un par ligne ou séparés par des virgules).</p>
+              <textarea id="username-input" rows="4" aria-label="Pseudonyme(s) à rechercher"></textarea>
+              <div class="search-actions">
+                <button id="search-btn" class="btn primary">Rechercher</button>
+                <button id="clear-search-btn" class="btn secondary">Effacer</button>
+              </div>
+              <div id="search-results" class="search-results"></div>
+            </div>
+            <div class="bottom-pane pane-list">
+              <p class="sub">Retirer des joueurs de votre classement.</p>
+              <div id="player-list" class="player-list"></div>
+              <div class="manager-actions">
+                <button id="share-btn" class="btn primary outline">Partager</button>
+                <button id="clear-btn" class="btn danger outline">Tout vider</button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
