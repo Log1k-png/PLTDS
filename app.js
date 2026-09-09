@@ -74,6 +74,7 @@ const els = {
   playedFacile: document.getElementById('played-facile'),
   playedDifficile: document.getElementById('played-difficile'),
   shareBtn: document.getElementById('share-btn'),
+  shareTopBtn: document.getElementById('share-top-btn'),
   expertEnableBtn: document.getElementById('expert-enable-btn'),
   expertDisableBtn: document.getElementById('expert-disable-btn'),
   chartsSection: document.getElementById('charts-section'),
@@ -783,7 +784,7 @@ function renderPlayedStrip(el, difficulty, scores, yesterdayScores) {
   const trackedSet = new Set(tracked);
 
   if (tracked.length === 0) {
-    el.innerHTML = `<span>Ajoutez des joueurs pour suivre qui joue aujourd'hui.</span>`;
+    el.innerHTML = `<span><button type="button" class="empty-search-cta">Ajoutez des joueurs</button> pour suivre qui joue aujourd'hui.</span>`;
     return;
   }
   if (!scores) {
@@ -919,13 +920,18 @@ function hideSpinner() {
 }
 
 /* ===== Share ===== */
+function cleanBaseUrl() {
+  const url = new URL(window.location.href);
+  url.search = '';
+  return url.toString();
+}
+
 function generateShareUrl() {
   const tracked = loadTracked();
   if (tracked.length === 0) return null;
-  const url = new URL(window.location.href);
-  url.search = '';
+  const url = new URL(cleanBaseUrl());
   url.searchParams.set('players', tracked.join(','));
-  url.searchParams.set('season', activeSeason);
+  if (activeSeason !== currentSeason) url.searchParams.set('season', activeSeason);
   return url.toString();
 }
 
@@ -1228,6 +1234,29 @@ function shareLeaderboard() {
       showToast('Presse-papiers indisponible. Copiez le lien dans la boîte de dialogue.', 'error');
       prompt('Copiez ce lien :', url);
     });
+}
+
+function shareTop() {
+  const tracked = loadTracked();
+  const url = tracked.length > 0 ? generateShareUrl() : cleanBaseUrl();
+
+  const copyFallback = () => writeClipboard(url)
+    .then(() => showToast('Lien copié !'))
+    .catch(() => {
+      showToast('Presse-papiers indisponible. Copiez le lien dans la boîte de dialogue.', 'error');
+      prompt('Copiez ce lien :', url);
+    });
+
+  if (navigator.share) {
+    navigator.share({ title: 'La Table des Scores', url })
+      .then(() => showToast('Partagé !'))
+      .catch(err => {
+        if (err && err.name === 'AbortError') return;
+        copyFallback();
+      });
+  } else {
+    copyFallback();
+  }
 }
 
 function copyScoreboard(difficulty) {
@@ -1895,6 +1924,13 @@ els.input.addEventListener('keydown', e => {
 
 els.clearBtn.addEventListener('click', clearAll);
 els.shareBtn.addEventListener('click', shareLeaderboard);
+if (els.shareTopBtn) els.shareTopBtn.addEventListener('click', shareTop);
+document.addEventListener('click', e => {
+  const cta = e.target.closest('.empty-search-cta');
+  if (!cta) return;
+  els.input.focus();
+  els.input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 if (els.expertEnableBtn) els.expertEnableBtn.addEventListener('click', toggleExpert);
 if (els.expertDisableBtn) els.expertDisableBtn.addEventListener('click', toggleExpert);
 document.querySelectorAll('.copy-board-btn').forEach(btn => {

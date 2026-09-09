@@ -91,8 +91,9 @@
           <span id="season-display" class="season-display">Chargement…</span>
           <button id="season-next" class="season-arrow" aria-label="Saison suivante">&#9654;</button>
         </div>
-      </div>
-    </header>
+        </div>
+        <button id="share-top-btn" class="btn small primary outline top-share-btn" type="button" aria-label="Partager le classement" title="Partager le lien"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/></svg><span class="sr-only">Partager le classement</span></button>
+      </header>
 
     <main class="content">
       <!-- Loading Overlay -->
@@ -122,7 +123,7 @@
           </div>
           <div id="abordable-empty" class="board-empty">
             <p>Aucun joueur dans ce classement.</p>
-            <p class="sub">Utilisez la recherche ci-dessous pour ajouter des joueurs.</p>
+            <p class="sub">Utilisez <button type="button" class="empty-search-cta">la recherche ci-dessous</button> pour ajouter des joueurs.</p>
           </div>
           <div id="abordable-table-wrap" class="table-wrap hidden">
             <table>
@@ -155,7 +156,7 @@
           </div>
           <div id="expert-empty" class="board-empty">
             <p>Aucun joueur dans ce classement.</p>
-            <p class="sub">Utilisez la recherche ci-dessous pour ajouter des joueurs.</p>
+            <p class="sub">Utilisez <button type="button" class="empty-search-cta">la recherche ci-dessous</button> pour ajouter des joueurs.</p>
           </div>
           <div id="expert-table-wrap" class="table-wrap hidden">
             <table>
@@ -253,7 +254,7 @@
               <div id="search-results" class="search-results"></div>
             </div>
             <div class="bottom-pane pane-list">
-              <p class="sub">Retirer des joueurs de votre classement.</p>
+              <p class="sub">Liste des joueurs de votre classement :</p>
               <div id="player-list" class="player-list"></div>
               <div class="manager-actions">
                 <button id="share-btn" class="btn primary outline">Partager</button>

@@ -67,6 +67,7 @@ a:hover {
 
 /* ===== Header ===== */
 .site-header {
+  position: relative;
   text-align: center;
   padding: 2rem 1rem 1.5rem;
   border-bottom: 1px solid var(--border-dim);
@@ -92,8 +93,10 @@ a:hover {
 }
 
 .season-nav {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
@@ -109,6 +112,22 @@ a:hover {
   font-weight: 700;
   letter-spacing: 0.3px;
   min-width: 160px;
+}
+
+.top-share-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0.45rem;
+  border-radius: 999px;
+}
+.top-share-btn svg {
+  flex: none;
 }
 
 #expert-group {
@@ -690,6 +709,32 @@ tr.highlighted .user-cell {
 .board-empty .sub {
   font-size: 0.85rem;
   opacity: 0.75;
+}
+
+.empty-search-cta {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  transition: color 0.15s, opacity 0.15s;
+}
+.empty-search-cta:hover {
+  color: var(--primary);
+  opacity: 1;
+  text-decoration-style: solid;
+}
+.empty-search-cta:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* ===== Charts ===== */
