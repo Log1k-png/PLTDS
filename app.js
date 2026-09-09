@@ -37,6 +37,8 @@ let chartHidden = new Set(); // player names (or '__avg__') toggled off via lege
 let forceRefreshAllPending = false; // when true, day-top fetches bypass the worker cache (?refresh=1)
 let refreshPending = false; // guards against concurrent refreshAll() runs
 let showExpert = false; // 'difficile' section enabled (persisted in localStorage)
+let flashName = null; // joueur fraichement ajoute : flash son chip dans le manager
+const addingPlayers = new Set(); // ajouts en cours (evite les doubles fetches concurrents)
 
 function loadShowExpert() {
   try {
@@ -354,18 +356,29 @@ function clearAll() {
 }
 
 async function addPlayer(entry, difficulty) {
-  addTrackedUsername(entry.username);
+  const username = entry.username;
+  if (addingPlayers.has(username)) return;
+  addingPlayers.add(username);
 
-  if (!liveScores[activeSeason]) liveScores[activeSeason] = {};
-  const scores = await fetchPlayerScores(entry.username, activeSeason);
-  liveScores[activeSeason][entry.username] = scores;
+  addTrackedUsername(username);
+  // Retour visuel immediat : le chip et la ligne apparaissent tout de suite,
+  // puis les fetches suivants remplissent les scores quelques instants plus tard.
+  flashName = username;
+  renderAllTables();
+  showToast(`« ${username} » ajouté`, 'success');
 
   try {
+    if (!liveScores[activeSeason]) liveScores[activeSeason] = {};
+    const scores = await fetchPlayerScores(username, activeSeason);
+    liveScores[activeSeason][username] = scores;
     await loadRecentScores(true);
   } catch (err) {
-    console.warn('Refresh today scores failed:', err);
+    console.warn(`Refresh ${username} scores failed:`, err);
+  } finally {
+    addingPlayers.delete(username);
   }
 
+  flashName = null;
   renderAllTables();
   invalidateCharts();
 }
@@ -449,6 +462,8 @@ function createResultCard(entry, difficulty) {
   const card = document.createElement('div');
   card.className = 'result-card';
   const diffLabel = DISPLAY_NAMES[difficulty];
+  const already = loadTracked().includes(entry.username);
+
   card.innerHTML = `
     <div class="result-info">
       <span class="result-name">${escapeHtml(entry.username)}</span>
@@ -458,14 +473,26 @@ function createResultCard(entry, difficulty) {
       <div class="result-score">${entry.score.toLocaleString('fr-FR')} pts</div>
       <div class="result-rank">Rang #${entry.rank.toLocaleString('fr-FR')}</div>
     </div>
-    <button class="btn primary add-btn">Ajouter</button>
+    <button class="btn add-btn${already ? ' result-added' : ' primary'}"${already ? ' disabled' : ''}>${already ? 'Déjà suivi ✓' : 'Ajouter'}</button>
   `;
+
   const btn = card.querySelector('.add-btn');
-  btn.addEventListener('click', () => {
-    addPlayer(entry, difficulty);
-    btn.textContent = 'Ajouté ✓';
-    btn.disabled = true;
-  });
+  if (!already) {
+    btn.addEventListener('click', () => {
+      addPlayer(entry, difficulty);
+      // Marque toutes les cartes du meme pseudo (facile + difficile) comme ajoutees.
+      document.querySelectorAll('.result-card').forEach(cardEl => {
+        if (cardEl.querySelector('.result-name').textContent !== entry.username) return;
+        const b = cardEl.querySelector('.add-btn');
+        if (b && !b.disabled) {
+          b.textContent = 'Déjà suivi ✓';
+          b.disabled = true;
+          b.classList.remove('primary');
+          b.classList.add('result-added');
+        }
+      });
+    });
+  }
   return card;
 }
 
@@ -630,7 +657,7 @@ function renderPlayerManager() {
   const sorted = [...tracked].sort((a, b) => a.localeCompare(b));
   sorted.forEach(username => {
     const chip = document.createElement('span');
-    chip.className = 'player-chip';
+    chip.className = 'player-chip' + (flashName === username ? ' flash' : '');
     chip.innerHTML = `
       ${escapeHtml(username)}
       <button class="chip-remove" title="Retirer ${escapeHtml(username)}">&times;</button>
@@ -638,6 +665,7 @@ function renderPlayerManager() {
     chip.querySelector('.chip-remove').addEventListener('click', () => removeTrackedPlayer(username));
     els.playerList.appendChild(chip);
   });
+  flashName = null;
 }
 
 function renderAllTables() {
