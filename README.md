@@ -36,7 +36,8 @@ The app is a static site served by a Cloudflare Pages Worker (`_worker.js`, Adva
   with a debounced `resize` handler.
 - Y-axis uses a nice step (`10^k × {1,2,2.5,5,10}`) targeting ~9 intervals, max 15 ticks,
   always including 0.
-- X-axis labels are dd/MM dates derived from the season's `firstDayDate`.
+- X-axis labels are dd/MM dates derived from the season's `firstDayDate`, with an automatic
+  step (1/1, 1/2, … 1/6) so at most 6 labels fit; the last day is always labelled.
 
 ### Chart image copy
 

@@ -1463,11 +1463,20 @@ function dayToDate(day) {
   return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
 }
 
-function pickIndices(count, n) {
-  if (count <= n) return Array.from({ length: count }, (_, i) => i);
-  const out = [];
-  for (let k = 0; k < n; k++) out.push(Math.round((k / (n - 1)) * (count - 1)));
-  return [...new Set(out)];
+// Auto step for X-axis labels: 1/1, 1/2, ... 1/6. Densest step that yields at
+// most 6 labels, always including the last day.
+function pickXLabels(count) {
+  if (count <= 0) return [];
+  for (const step of [1, 2, 3, 4, 5, 6]) {
+    const labels = [];
+    for (let i = 0; i < count; i += step) labels.push(i);
+    if (labels[labels.length - 1] !== count - 1) labels.push(count - 1);
+    if (labels.length <= 6) return labels;
+  }
+  const labels = [];
+  for (let i = 0; i < count; i += 6) labels.push(i);
+  if (labels[labels.length - 1] !== count - 1) labels.push(count - 1);
+  return labels;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1547,7 +1556,7 @@ function drawLineChart(svg, days, allSeries, getValues) {
     svg.appendChild(lbl);
   }
 
-  pickIndices(days.length, 6).forEach(i => {
+  pickXLabels(days.length).forEach(i => {
     const x = xAt(i);
     if (x < ML + 18) return;
     const lbl = svgEl('text', { x, y: H - MB + 4, class: 'xlabel' + (i === days.length - 1 ? ' xlabel-end' : '') });
