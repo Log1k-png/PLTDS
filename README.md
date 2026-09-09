@@ -23,7 +23,7 @@ The app is a static site served by a Cloudflare Pages Worker (`_worker.js`, Adva
 - `app.js` — all client logic: data fetching, caching, chart rendering, image copy.
 - `index.html` — layout and controls.
 - `style.css` — responsive styling.
-- `favicon.png`, `og-image.png`, `robots.txt`, `sitemap.xml`, `google8cc9053260b18b8f.html` — static site assets.
+- `favicon.png`, `og-image.png`, `robots.txt`, `sitemap.xml` — static site assets.
 
 ### Chart features
 

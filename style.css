@@ -174,33 +174,6 @@ a:hover {
   cursor: not-allowed;
 }
 
-.btn.danger.refresh-btn {
-  background: var(--danger);
-  color: #fff;
-  border-radius: var(--radius-sm);
-  padding: 0.45rem 0.6rem;
-  font-size: 0.8rem;
-  line-height: 1;
-  height: auto;
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.btn.danger.refresh-btn svg {
-  display: block;
-  width: 16px;
-  height: 16px;
-  flex: none;
-}
-.btn.danger.refresh-btn:hover {
-  background: #ff6a74;
-  color: #fff;
-}
-.btn.danger.refresh-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 .refresh-btn.refreshing {
   animation: refresh-pulse 1.2s ease-in-out infinite;
 }
@@ -916,12 +889,6 @@ tr.highlighted .user-cell {
   text-anchor: end;
 }
 
-.chart-block svg .hover-guide {
-  stroke: rgba(255, 255, 255, 0.25);
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-}
-
 .chart-block svg .hover-dot {
   stroke: #0b1218;
   stroke-width: 1.5;
@@ -939,12 +906,6 @@ tr.highlighted .user-cell {
   stroke: rgba(11, 18, 24, 0.9);
   stroke-width: 3px;
   stroke-linejoin: round;
-}
-
-.chart-block svg text.hover-day {
-  fill: var(--text);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .chart-legend {

@@ -496,7 +496,7 @@ function renderResults(resultsMap) {
   table.innerHTML = `
     <thead>
       <tr>
-        <th class="col-pseudo">Pseudo</th>
+        <th>Pseudo</th>
         <th>Niveau</th>
         <th>Score</th>
         <th>Rang</th>
@@ -717,7 +717,6 @@ function updateExpertVisibility() {
   const chartDiffBtn = document.querySelector('#chart-diff-toggle button[data-difficulty="difficile"]');
   if (chartDiffBtn) {
     chartDiffBtn.disabled = !showExpert;
-    chartDiffBtn.classList.toggle('disabled', !showExpert);
     chartDiffBtn.title = showExpert ? '' : 'Le niveau Expert est désactivé. Activez-le sur le classement.';
   }
   if (!showExpert && chartDifficulty === 'difficile') {
@@ -1190,14 +1189,6 @@ function renderChartBlob(svg, title, caption) {
 function copyChartAsImage(svg, title) {
   const season = allSeasons.find(s => s.number === activeSeason);
   const caption = season ? `Saison ${activeSeason} — ${season.name}` : `Saison ${activeSeason}`;
-
-  console.log('[chart-copy]', {
-    isSecureContext: window.isSecureContext,
-    hasClipboard: !!navigator.clipboard,
-    hasWrite: !!(navigator.clipboard && navigator.clipboard.write),
-    hasClipboardItem: !!window.ClipboardItem,
-    supportsImageCopy: supportsImageCopy(),
-  });
 
   const blobPromise = renderChartBlob(svg, title, caption);
 
