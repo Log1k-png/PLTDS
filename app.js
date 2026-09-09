@@ -1705,7 +1705,7 @@ function drawLineChart(svg, days, allSeries, getValues) {
     const item = e.target.closest('.legend-item');
     if (!item) return;
     const idx = svgSeries.findIndex(s => s.name === item.dataset.name);
-    highlightSeries(idx, false);
+    highlightSeries(idx, true);
   });
   legend.addEventListener('mouseleave', () => highlightSeries(-1, false));
 
