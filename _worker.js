@@ -27,7 +27,6 @@ const ALLOWED_STATIC = new Set([
   '/og-image.png',
   '/robots.txt',
   '/sitemap.xml',
-  '/google8cc9053260b18b8f.html',
 ]);
 
 const API_BASE_DEFAULT = 'https://api.latabledessavoirs.fr';
