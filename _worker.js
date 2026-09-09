@@ -6,8 +6,14 @@
  * (tout le reste, y compris README.md, repond 404).
  *
  * Cache : les tops du jour de jours anciens (day <= currentDay - 2) sont mis
- * en cache via la Cache API (7 jours). Aujourd'hui et hier ne sont jamais
- * caches. Un parametre `refresh=1` ignore le cache et re-ecrit l'entree.
+ * en cache via la Cache API (7 jours). Aujourd'hui et hier sont caches
+ * 2 heures. Chaque entree recente est marquee avec le jour courant (x-cache-day)
+ * a l'ecriture : si le jour change (minuit), les tops d'hier, qui reçoivent
+ * leurs bonus, ne sont plus servis tels quels et sont rafraichis de maniere
+ * bloquante. Un parametre `refresh=1` ignore le cache et re-ecrit l'entree.
+ *
+ * L'URL de l'API upstream peut etre surchargee via la variable d'environnement
+ * API_BASE_URL (permettant le developpement contre un mock local).
  */
 
 // Seuls ces fichiers sont servis publiquement. Ajoutez ici tout nouveau
@@ -24,6 +30,8 @@ const ALLOWED_STATIC = new Set([
   '/google8cc9053260b18b8f.html',
 ]);
 
+const API_BASE_DEFAULT = 'https://api.latabledessavoirs.fr';
+
 const DAY_CACHE_TTL = 60 * 60 * 24 * 7; // 7 jours (secondes)
 const RECENT_CACHE_TTL = 60 * 60 * 2; // 2 heures (secondes) pour aujourd'hui et hier
 const CACHE_AFTER_DAYS = 2; // on ne cache que les jours finis depuis >= 2 jours
@@ -31,13 +39,13 @@ const PROGRESS_TTL_MS = 60 * 1000; // memoisation de /seasons/progress
 
 let progressMemo = { day: null, at: 0 };
 
-async function getCurrentDay() {
+async function getCurrentDay(apiBase, ttlMs = PROGRESS_TTL_MS) {
   const now = Date.now();
-  if (progressMemo.day != null && now - progressMemo.at < PROGRESS_TTL_MS) {
+  if (progressMemo.day != null && now - progressMemo.at < ttlMs) {
     return progressMemo.day;
   }
   try {
-    const resp = await fetch('https://api.latabledessavoirs.fr/seasons/progress', {
+    const resp = await fetch(`${apiBase}/seasons/progress`, {
       headers: { 'Accept': 'application/json' },
     });
     if (resp.ok) {
@@ -57,16 +65,26 @@ async function getCurrentDay() {
 /**
  * Decide si une reponse en cache doit etre servie telle quelle.
  *
- * Pour le top d'AUJOURD'HUI demande avec `users`, on ne sert la reponse en
- * cache que si chaque joueur demande y est present. Si un joueur est absent
- * (il vient de jouer, sa note n'etait pas encore en cache), on refuse de
- * servir le cache : le handler ira chercher des donnees fraiches ("refresh
- * bloquant"). Le top d'hier et les jours plus anciens n'ont pas ce controle
- * (hier est clos et immuable, les jours anciens sont figes).
+ * Les entrees recentes (aujourd'hui / hier) sont marquees avec le jour courant
+ * (x-cache-day) a l'ecriture. Si ce marqueur differe du jour actuel, l'entree
+ * date d'avant le changement de jour : les scores d'hier reçoivent leurs bonus
+ * au passage du jour, elle est donc perimee et on refuse de la servir (le
+ * handler ira chercher des donnees fraiches de maniere bloquante).
+ *
+ * Pour le top d'AUJOURD'HUI demande avec `users`, on ne sert en plus la
+ * reponse en cache que si chaque joueur demande y est present. Si un joueur
+ * est absent (il vient de jouer, sa note n'etait pas encore en cache), on
+ * refuse egalement de servir le cache (refresh bloquant).
  */
 async function shouldServeCached(cached, recentCache, dayNum, currentDay, usersParam) {
   // Refuser de servir en cas de reponse d'erreur en cache.
   if (!cached.ok) return false;
+
+  // Jour roule : une entree recente dont le marqueur de jour differe du jour
+  // actuel est perimee (scores d'hier pre-bonus). On ne la sert pas.
+  if (recentCache && cached.headers.get('x-cache-day') !== String(currentDay)) {
+    return false;
+  }
 
   // Le controle "joueur manquant" ne concerne que le top d'aujourd'hui,
   // et uniquement quand une liste `users` est fournie.
@@ -90,6 +108,9 @@ async function shouldServeCached(cached, recentCache, dayNum, currentDay, usersP
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const apiBase = env.API_BASE_URL || API_BASE_DEFAULT;
+    // Permet de desactiver la memoisation de /seasons/progress (tests).
+    const progressTtlMs = env.PROGRESS_TTL_MS != null ? Number(env.PROGRESS_TTL_MS) : PROGRESS_TTL_MS;
 
     // Proxy /api/* vers l'API externe
     if (url.pathname.startsWith('/api/')) {
@@ -110,7 +131,7 @@ export default {
       const fresh = url.searchParams.get('refresh') === '1';
       if (fresh) url.searchParams.delete('refresh');
 
-      const targetUrl = new URL(`https://api.latabledessavoirs.fr/${apiPath}`);
+      const targetUrl = new URL(`${apiBase}/${apiPath}`);
       // Copie les query strings
       url.searchParams.forEach((value, key) => {
         targetUrl.searchParams.set(key, value);
@@ -119,9 +140,15 @@ export default {
       // Parametre `users` : liste de pseudonymes a renvoyer (filtre cote serveur).
       const usersParam = url.searchParams.get('users');
 
+      // Jour en cours, detecte via /seasons/progress (memoise 60s).
+      // Utilise pour savoir si une entree en cache appartient a un jour
+      // anterieur (les tops d'hier recoivent leurs bonus au changement de jour).
+      let currentDay = null;
+
       // Cache d'un top du jour :
       //   - jours anciens (>= 2 jours) : TTL 7 jours, sans controle particulier.
-      //   - hier : TTL 2 heures (jour clos, immuable).
+      //   - hier : TTL 2 heures, mais invalide si le jour courant a change
+      //     (bonus appliques aux scores d'hier au passage du jour).
       //   - aujourd'hui : TTL 2 heures, MAIS si un joueur demande (`users`) est
       //     absent de la reponse en cache (il vient de jouer), on rafraichit de
       //     maniere bloquante et on renvoie des donnees fraiches.
@@ -130,7 +157,7 @@ export default {
       let recentCache = false;
       if (dayMatch) {
         const dayNum = parseInt(dayMatch[1], 10);
-        const currentDay = await getCurrentDay();
+        currentDay = await getCurrentDay(apiBase, progressTtlMs);
         if (currentDay != null) {
           if (dayNum <= currentDay - CACHE_AFTER_DAYS) {
             // Jour ancien et clos depuis >= 2 jours.
@@ -146,7 +173,16 @@ export default {
           const cached = await caches.default.match(cacheKey);
           if (cached) {
             const serve = await shouldServeCached(cached, recentCache, dayNum, currentDay, usersParam);
-            if (serve) return cached;
+            if (serve) {
+              // Ne jamais muter les en-tetes de la reponse venant du cache
+              // (Headers immuables -> TypeError). On reconstruit une reponse
+              // pour le client : sans le marqueur interne, et sans cache
+              // navigateur (c'est le worker qui decide de la fraicheur).
+              const headers = new Headers(cached.headers);
+              headers.delete('x-cache-day');
+              headers.set('cache-control', 'no-store');
+              return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
+            }
           }
         }
       }
@@ -171,7 +207,7 @@ export default {
             entries,
           }), {
             status: upstream.status,
-            headers: { 'content-type': 'application/json', 'cache-control': 'no-cache' },
+            headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
           });
         } catch (err) {
           resp = new Response(JSON.stringify({ error: 'Proxy error', message: err.message }), {
@@ -194,7 +230,7 @@ export default {
             statusText: upstream.statusText,
             headers: {
               'content-type': upstream.headers.get('content-type') || 'application/json',
-              'cache-control': 'no-cache',
+              'cache-control': 'no-store',
             },
           });
         } catch (err) {
@@ -206,8 +242,15 @@ export default {
       }
 
       if (cacheKey && resp.ok) {
-        resp.headers.set('cache-control', `public, max-age=${recentCache ? RECENT_CACHE_TTL : DAY_CACHE_TTL}`);
-        ctx.waitUntil(caches.default.put(cacheKey, resp.clone()));
+        // La copie stockee garde le marqueur du jour et son propre TTL :
+        // caches.default lit cache-control (max-age) pour expirer l'entree.
+        const cacheResp = resp.clone();
+        cacheResp.headers.set('x-cache-day', String(currentDay));
+        cacheResp.headers.set('cache-control', `public, max-age=${recentCache ? RECENT_CACHE_TTL : DAY_CACHE_TTL}`);
+        ctx.waitUntil(caches.default.put(cacheKey, cacheResp));
+        // Le client ne doit jamais mettre en cache : c'est le worker qui
+        // decide de servir son cache ou de rafraichir (marqueur / joueur absent).
+        resp.headers.set('cache-control', 'no-store');
       }
       return resp;
     }
@@ -236,3 +279,6 @@ export default {
     return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   }
 };
+
+// Expose la logique de decision (tests unitaires Node, sans effe sur wrangler).
+export { shouldServeCached };

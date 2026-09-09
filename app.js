@@ -143,6 +143,7 @@ async function apiGet(path, params = {}) {
 
   try {
     const resp = await fetch(url.toString(), {
+      cache: 'no-store',
       headers: { 'Accept': 'application/json' },
       signal: controller.signal,
     });
