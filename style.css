@@ -1262,6 +1262,14 @@ textarea:focus {
   background: var(--danger-dim);
   border-color: rgba(244, 71, 84, 0.55);
 }
+.btn.danger.primary {
+  background: var(--danger);
+  color: #fff;
+}
+.btn.danger.primary:hover {
+  background: #ff5c67;
+  box-shadow: 0 0 14px rgba(244, 71, 84, 0.4);
+}
 
 /* ===== Footer ===== */
 .site-footer {
@@ -1313,7 +1321,7 @@ textarea:focus {
 }
 
 /* ===== Credits dialog ===== */
-.credits-dialog {
+.app-dialog {
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1324,14 +1332,54 @@ textarea:focus {
   width: 100%;
   overflow: hidden;
 }
-.credits-dialog::backdrop {
+.app-dialog::backdrop {
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(3px);
 }
-.credits-dialog-inner {
+.app-dialog-inner {
   display: flex;
   flex-direction: column;
   max-height: 80vh;
+}
+.app-dialog-header {
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--border-dim);
+  background: linear-gradient(180deg, var(--primary-dim), transparent);
+}
+.app-dialog-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+.app-dialog-body {
+  padding: 1rem 1.5rem;
+  overflow-y: auto;
+}
+.app-dialog-footer {
+  padding: 0.9rem 1.5rem;
+  border-top: 1px solid var(--border-dim);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+.app-dialog-footer .btn {
+  min-width: 7rem;
+}
+
+@media (max-width: 420px) {
+  .app-dialog-footer .btn {
+    width: 100%;
+  }
+}
+
+.confirm-dialog {
+  max-width: min(92vw, 22rem);
+}
+.confirm-message {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text);
 }
 
 .credits-header {
@@ -1393,22 +1441,6 @@ textarea:focus {
 }
 .credits-item a:hover {
   text-decoration: underline;
-}
-
-.credits-footer {
-  padding: 0.9rem 1.5rem;
-  border-top: 1px solid var(--border-dim);
-  display: flex;
-  justify-content: flex-end;
-}
-.credits-footer .btn {
-  min-width: 7rem;
-}
-
-@media (max-width: 420px) {
-  .credits-footer .btn {
-    width: 100%;
-  }
 }
 
 /* ===== Scrollbar ===== */

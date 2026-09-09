@@ -279,8 +279,8 @@
     </footer>
   </div>
 
-  <dialog id="credits-dialog" class="credits-dialog" aria-labelledby="credits-title">
-    <div class="credits-dialog-inner">
+  <dialog id="credits-dialog" class="app-dialog credits-dialog" aria-labelledby="credits-title">
+    <div class="app-dialog-inner">
       <div class="credits-header">
         <h2 id="credits-title">Crédits</h2>
         <p class="credits-subtitle">Icônes, police et contenus utilisés sur ce site.</p>
@@ -321,8 +321,23 @@
           </div>
         </section>
       </div>
-      <div class="credits-footer">
+      <div class="app-dialog-footer">
         <button id="credits-close-btn" class="btn primary" type="button">Fermer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="app-dialog confirm-dialog" aria-labelledby="confirm-title">
+    <div class="app-dialog-inner">
+      <div class="app-dialog-header">
+        <h2 id="confirm-title">Confirmer</h2>
+      </div>
+      <div class="app-dialog-body">
+        <p id="confirm-message" class="confirm-message"></p>
+      </div>
+      <div class="app-dialog-footer">
+        <button id="confirm-cancel" class="btn secondary" type="button">Annuler</button>
+        <button id="confirm-ok" class="btn danger primary" type="button">Confirmer</button>
       </div>
     </div>
   </dialog>

@@ -324,6 +324,54 @@ async function fetchAllTrackedScores(season) {
   hideSpinner();
 }
 
+/* ===== Confirm dialog ===== */
+function openConfirmDialog({ title, message, confirmLabel }) {
+  const dialog = document.getElementById('confirm-dialog');
+  if (!dialog || typeof dialog.showModal !== 'function') {
+    return Promise.resolve(
+      typeof window.confirm === 'function' && window.confirm(message)
+    );
+  }
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').textContent = message;
+  const okBtn = document.getElementById('confirm-ok');
+  const cancelBtn = document.getElementById('confirm-cancel');
+  okBtn.textContent = confirmLabel;
+
+  return new Promise(resolve => {
+    let settled = false;
+
+    function settle(value) {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.removeEventListener('click', onBackdrop);
+      dialog.removeEventListener('cancel', onEsc);
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(value);
+    }
+
+    function onOk() { settle(true); }
+    function onCancel() { settle(false); }
+    function onEsc() { settle(false); }
+    function onBackdrop(e) {
+      const rect = dialog.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) settle(false);
+    }
+
+    dialog.addEventListener('click', onBackdrop);
+    dialog.addEventListener('cancel', onEsc);
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    dialog.showModal();
+    cancelBtn.focus();
+  });
+}
+
 /* ===== Data Mutation ===== */
 function addTrackedUsername(username) {
   const tracked = loadTracked();
@@ -333,8 +381,13 @@ function addTrackedUsername(username) {
   }
 }
 
-function removeTrackedPlayer(username) {
-  if (!confirm(`Retirer ${username} de votre leaderboard ?`)) return;
+async function removeTrackedPlayer(username) {
+  const ok = await openConfirmDialog({
+    title: 'Retirer le joueur',
+    message: `Retirer « ${username} » de votre classement ?`,
+    confirmLabel: 'Retirer'
+  });
+  if (!ok) return;
   const tracked = loadTracked().filter(u => u !== username);
   saveTracked(tracked);
   if (getHighlighted() === username) setHighlighted(null);
@@ -345,8 +398,13 @@ function removeTrackedPlayer(username) {
   invalidateCharts();
 }
 
-function clearAll() {
-  if (!confirm('Voulez-vous vraiment vider votre liste de joueurs ?')) return;
+async function clearAll() {
+  const ok = await openConfirmDialog({
+    title: 'Vider la liste',
+    message: 'Voulez-vous vraiment vider votre liste de joueurs ?',
+    confirmLabel: 'Tout vider'
+  });
+  if (!ok) return;
   saveTracked([]);
   setHighlighted(null);
   liveScores = {};
