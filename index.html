@@ -142,13 +142,14 @@
         </div>
         </div>
 
-        <div class="board-group">
+        <div class="board-group" id="expert-group">
           <div id="played-difficile" class="played-today"><span class="day-loading">…</span></div>
           <div class="board">
           <div class="board-header">
             <h2>Niveau Expert</h2>
             <span class="board-actions">
               <span id="expert-stats" class="board-stats"></span>
+              <button id="expert-disable-btn" class="btn small secondary hidden" type="button">Désactiver</button>
               <button class="btn small copy-board-btn" data-difficulty="difficile" title="Copier le classement dans le presse-papiers" aria-label="Copier le classement Niveau Expert"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>Copier</button>
             </span>
           </div>
@@ -173,6 +174,12 @@
             </table>
           </div>
         </div>
+          <div class="expert-overlay hidden" aria-hidden="true">
+            <div class="expert-lock">
+              <p>Le niveau Expert est désactivé pour économiser les requêtes.</p>
+              <button id="expert-enable-btn" class="btn primary" type="button">Activer le niveau Expert</button>
+            </div>
+          </div>
         </div>
       </div>
 

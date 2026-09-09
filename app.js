@@ -1,6 +1,7 @@
 /* ===== Constants ===== */
 const API_BASE = '/api';
 const STORAGE_KEY = 'pltds_tracked_v4';
+const EXPERT_KEY = 'pltds_show_expert';
 const DIFFICULTIES = ['facile', 'difficile'];
 const DISPLAY_NAMES = { facile: 'Niveau Abordable', difficile: 'Niveau Expert' };
 
@@ -35,6 +36,20 @@ let chartsVisible = false;
 let chartHidden = new Set(); // player names (or '__avg__') toggled off via legend
 let forceRefreshAllPending = false; // when true, day-top fetches bypass the worker cache (?refresh=1)
 let refreshPending = false; // guards against concurrent refreshAll() runs
+let showExpert = false; // 'difficile' section enabled (persisted in localStorage)
+
+function loadShowExpert() {
+  try {
+    return localStorage.getItem(EXPERT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+showExpert = loadShowExpert();
+
+function enabledDifficulties() {
+  return showExpert ? DIFFICULTIES : ['facile'];
+}
 
 /* ===== DOM Elements ===== */
 const els = {
@@ -59,6 +74,8 @@ const els = {
   shareBtn: document.getElementById('share-btn'),
   abordableStats: document.getElementById('abordable-stats'),
   expertStats: document.getElementById('expert-stats'),
+  expertEnableBtn: document.getElementById('expert-enable-btn'),
+  expertDisableBtn: document.getElementById('expert-disable-btn'),
   chartsSection: document.getElementById('charts-section'),
   chartsToggleBtn: document.getElementById('charts-toggle-btn'),
   chartsLoading: document.getElementById('charts-loading'),
@@ -186,7 +203,7 @@ async function fetchDayEntries(dayNumber, difficulty) {
 async function loadDayScores(dayNumber) {
   const result = { dayNumber };
   await Promise.all(
-    DIFFICULTIES.map(async diff => {
+    enabledDifficulties().map(async diff => {
       try {
         const entries = await fetchDayEntries(dayNumber, diff);
         result[diff] = new Map(entries.map(e => [e.username, e]));
@@ -248,7 +265,7 @@ async function refreshAll() {
 /* ===== Live Score Fetching ===== */
 async function fetchPlayerScores(username, season) {
   const result = { username, facile: null, difficile: null };
-  for (const diff of DIFFICULTIES) {
+  for (const diff of enabledDifficulties()) {
     try {
       const list = await searchLeaderboard(season, diff, username);
       if (Array.isArray(list) && list.length > 0) {
@@ -521,6 +538,7 @@ function formatDayCell(entry, isToday, isLoading) {
 }
 
 function renderDifficultyTable(difficulty) {
+  if (difficulty === 'difficile' && !showExpert) return;
   const tracked = loadTracked();
 
   const t = tables[difficulty];
@@ -592,7 +610,7 @@ function renderBoardStats() {
   }
 
   if (els.abordableStats) els.abordableStats.textContent = calcStats('facile');
-  if (els.expertStats) els.expertStats.textContent = calcStats('difficile');
+  if (els.expertStats) els.expertStats.textContent = showExpert ? calcStats('difficile') : '';
 }
 
 function renderPlayerManager() {
@@ -627,6 +645,66 @@ function renderAllTables() {
   renderDifficultyTable('difficile');
   renderBoardStats();
   renderPlayerManager();
+}
+
+/* ===== Niveau Expert toggle ===== */
+function updateExpertVisibility() {
+  const expertGroup = document.getElementById('expert-group');
+  if (expertGroup) {
+    expertGroup.classList.toggle('expert-disabled', !showExpert);
+    const overlay = expertGroup.querySelector('.expert-overlay');
+    if (overlay) {
+      overlay.classList.toggle('hidden', showExpert);
+      overlay.setAttribute('aria-hidden', String(showExpert));
+    }
+  }
+  if (els.expertDisableBtn) els.expertDisableBtn.classList.toggle('hidden', !showExpert);
+  if (!showExpert && els.playedDifficile) els.playedDifficile.innerHTML = '';
+  const chartDiffBtn = document.querySelector('#chart-diff-toggle button[data-difficulty="difficile"]');
+  if (chartDiffBtn) {
+    chartDiffBtn.disabled = !showExpert;
+    chartDiffBtn.classList.toggle('disabled', !showExpert);
+    chartDiffBtn.title = showExpert ? '' : 'Le niveau Expert est désactivé. Activez-le sur le classement.';
+  }
+  if (!showExpert && chartDifficulty === 'difficile') {
+    chartDifficulty = 'facile';
+    document.querySelectorAll('#chart-diff-toggle button').forEach(b => {
+      b.classList.toggle('active', b.dataset.difficulty === chartDifficulty);
+    });
+    if (chartsVisible) loadCharts();
+  }
+}
+
+async function toggleExpert() {
+  showExpert = !showExpert;
+  try {
+    localStorage.setItem(EXPERT_KEY, showExpert ? '1' : '0');
+  } catch (err) {
+    // Quota / privit adresse : ignore.
+  }
+  updateExpertVisibility();
+  if (showExpert) {
+    // Force un rechargement complet pour remplir les slots 'difficile'
+    // (fetchAllTrackedScores ne refait pas la demande si tous les joueurs
+    // sont deja presents en memoire).
+    if (liveScores[activeSeason]) liveScores[activeSeason] = {};
+    try {
+      if (activeSeason) await fetchAllTrackedScores(activeSeason);
+      await loadRecentScores(true);
+      renderAllTables();
+      if (chartsVisible) loadCharts();
+    } catch (err) {
+      console.warn('Impossible de charger les scores Expert:', err);
+    }
+  } else {
+    const t = tables.difficile;
+    if (t.body) t.body.innerHTML = '';
+    if (t.wrap) t.wrap.classList.add('hidden');
+    if (t.empty) t.empty.classList.remove('hidden');
+    if (els.playedDifficile) els.playedDifficile.innerHTML = '';
+    renderAllTables();
+    if (chartsVisible) loadCharts();
+  }
 }
 
 function bestEntriesFromMap(map, trackedSet) {
@@ -688,7 +766,10 @@ function renderPlayedStrip(el, difficulty, scores, yesterdayScores) {
 
 function renderPlayedToday() {
   const onCurrent = activeSeason === currentSeason;
-  [[els.playedFacile, 'facile'], [els.playedDifficile, 'difficile']].forEach(([el, diff]) => {
+  const strips = showExpert
+    ? [[els.playedFacile, 'facile'], [els.playedDifficile, 'difficile']]
+    : [[els.playedFacile, 'facile']];
+  strips.forEach(([el, diff]) => {
     if (!el) return;
     if (!onCurrent) {
       el.classList.add('hidden');
@@ -702,7 +783,7 @@ function renderPlayedToday() {
 /* ===== Search Logic ===== */
 async function searchUser(username) {
   const results = { facile: [], difficile: [] };
-  for (const diff of DIFFICULTIES) {
+  for (const diff of enabledDifficulties()) {
     try {
       const list = await searchLeaderboard(activeSeason, diff, username);
       if (Array.isArray(list)) results[diff] = list;
@@ -1708,6 +1789,7 @@ async function init() {
     allSeasons = seasonsData.seasons;
 
     migrateOldStorage();
+    updateExpertVisibility();
 
     const urlParams = new URLSearchParams(window.location.search);
     const urlSeason = parseInt(urlParams.get('season'), 10);
@@ -1759,6 +1841,8 @@ els.input.addEventListener('keydown', e => {
 
 els.clearBtn.addEventListener('click', clearAll);
 els.shareBtn.addEventListener('click', shareLeaderboard);
+if (els.expertEnableBtn) els.expertEnableBtn.addEventListener('click', toggleExpert);
+if (els.expertDisableBtn) els.expertDisableBtn.addEventListener('click', toggleExpert);
 document.querySelectorAll('.copy-board-btn').forEach(btn => {
   btn.addEventListener('click', () => copyScoreboard(btn.dataset.difficulty));
 });
@@ -1775,6 +1859,7 @@ document.querySelectorAll('.copy-chart-btn').forEach(btn => {
 
 document.querySelectorAll('#chart-diff-toggle button').forEach(btn => {
   btn.addEventListener('click', () => {
+    if (btn.dataset.difficulty === 'difficile' && !showExpert) return;
     document.querySelectorAll('#chart-diff-toggle button').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     chartDifficulty = btn.dataset.difficulty;
