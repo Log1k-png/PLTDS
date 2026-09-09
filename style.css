@@ -515,13 +515,6 @@ a:hover {
   letter-spacing: 0.3px;
 }
 
-.board-stats {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
 .board-actions {
   display: flex;
   align-items: center;

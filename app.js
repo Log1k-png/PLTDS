@@ -74,8 +74,6 @@ const els = {
   playedFacile: document.getElementById('played-facile'),
   playedDifficile: document.getElementById('played-difficile'),
   shareBtn: document.getElementById('share-btn'),
-  abordableStats: document.getElementById('abordable-stats'),
-  expertStats: document.getElementById('expert-stats'),
   expertEnableBtn: document.getElementById('expert-enable-btn'),
   expertDisableBtn: document.getElementById('expert-disable-btn'),
   chartsSection: document.getElementById('charts-section'),
@@ -624,29 +622,6 @@ function renderDifficultyTable(difficulty) {
   });
 }
 
-function renderBoardStats() {
-  const tracked = loadTracked();
-  const seasonCache = liveScores[activeSeason] || {};
-
-  function calcStats(difficulty) {
-    let count = 0;
-    let sum = 0;
-    tracked.forEach(username => {
-      const p = seasonCache[username];
-      if (p && p[difficulty] && p[difficulty].score != null) {
-        count++;
-        sum += p[difficulty].score;
-      }
-    });
-    if (count === 0) return '';
-    const avg = Math.round(sum / count);
-    return `${count} joueur${count > 1 ? 's' : ''} · Moy. ${avg.toLocaleString('fr-FR')}`;
-  }
-
-  if (els.abordableStats) els.abordableStats.textContent = calcStats('facile');
-  if (els.expertStats) els.expertStats.textContent = showExpert ? calcStats('difficile') : '';
-}
-
 function renderPlayerManager() {
   const tracked = loadTracked();
   els.playerList.innerHTML = '';
@@ -722,7 +697,6 @@ function renderAllTables() {
   renderPlayedToday();
   renderDifficultyTable('facile');
   renderDifficultyTable('difficile');
-  renderBoardStats();
   renderPlayerManager();
   updateResultRowStates();
 }
