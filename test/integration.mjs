@@ -89,7 +89,7 @@ try {
   check('dev server ready on /', await waitFor(`${base}/`), logs ? 'output captured' : 'no output');
 
   const as = (d, users) =>
-    `${base}/api/leaderboards/day/${d}/facile/top?limit=-1&users=${encodeURIComponent(users)}`;
+    `${base}/api/leaderboards/day/${d}/facile/top?limit=0&users=${encodeURIComponent(users)}`;
   const dayTopHits = async () => {
     const log = parse((await req(`${mockUrl}/__log`)).text);
     return log.requests.filter(r => r.method === 'GET' && r.path.startsWith('/leaderboards/day/')).length;

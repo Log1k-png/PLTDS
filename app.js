@@ -194,7 +194,7 @@ async function fetchCurrentDay() {
 }
 
 async function fetchDayEntries(dayNumber, difficulty) {
-  const params = { limit: -1 };
+  const params = { limit: 0 };
   const tracked = loadTracked();
   if (tracked.length > 0) params.users = tracked.join(',');
   if (forceRefreshAllPending) params.refresh = '1';
