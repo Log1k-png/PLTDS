@@ -863,7 +863,7 @@ function renderPlayedStrip(el, difficulty, scores, yesterdayScores) {
   const todayBest = bestEntriesFromMap(map, trackedSet);
   if (todayBest.length > 0) {
     const names = todayBest.map(b => `<span class="pt-best">${escapeHtml(b.name)}</span>`).join(', ');
-    lines.push(`Meilleur(s) aujoud'hui : ${names} (${todayBest[0].score} pts)`);
+    lines.push(`Meilleur(s) aujourd'hui : ${names} (${todayBest[0].score} pts)`);
   }
 
   const yestMap = yesterdayScores ? yesterdayScores[difficulty] : null;
