@@ -27,7 +27,11 @@ const ALLOWED_STATIC = new Set([
   '/og-image.png',
   '/robots.txt',
   '/sitemap.xml',
+  '/sw.js',
 ]);
+
+// Dossier(s) servis en entier (tout fichier qu'ils contiennent est public).
+const ALLOWED_PREFIXES = ['/assets/'];
 
 const API_BASE_DEFAULT = 'https://api.latabledessavoirs.fr';
 
@@ -258,7 +262,11 @@ export default {
     const normalized = url.pathname === '/'
       ? '/'
       : url.pathname.replace(/\/+$/, '') || '/';
-    if (ALLOWED_STATIC.has(normalized) || ALLOWED_STATIC.has(normalized + '/index.html')) {
+    if (
+      ALLOWED_STATIC.has(normalized) ||
+      ALLOWED_STATIC.has(normalized + '/index.html') ||
+      ALLOWED_PREFIXES.some(prefix => normalized.startsWith(prefix))
+    ) {
       // Sitemap et robots.txt : renvoyer une reponse explicite, bien identifiable
       // par les crawlers (Content-Type, Vary: Accept-Encoding, cache positif).
       // Le passthrough brut via env.ASSETS.fetch ne fournit pas toujours

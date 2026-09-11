@@ -2130,4 +2130,10 @@ Object.values(tables).forEach(t => {
 });
 
 /* ===== Start ===== */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(err => {
+    console.warn('Service Worker registration failed:', err);
+  });
+}
+
 init();

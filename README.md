@@ -63,8 +63,8 @@ Requests to `/api/*` are resolved by the worker to the real API, so data works l
 ## Deployment
 
 Deploy the repo root directory (Advanced Mode pages worker). Only the files in the worker's
-`ALLOWED_STATIC` list are reachable publicly; `README.md`, `RECON_API.md`, `.git`, `.wrangler`
-etc. upload but answer 404.
+`ALLOWED_STATIC` list (and anything under the allow-listed folders like `assets/`) are
+reachable publicly; `README.md`, `RECON_API.md`, `.git`, `.wrangler` etc. upload but answer 404.
 
 Commit message convention so far is a short imperative line ("commit no push" triggers a local
 commit only).
