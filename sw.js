@@ -9,7 +9,7 @@
  * en compte), et le cache permet l'ouverture du site sans connexion.
  */
 
-const CACHE = 'pltds-shell-v2';
+const CACHE = 'pltds-shell-v3';
 
 const SHELL = [
   '/',
@@ -20,6 +20,8 @@ const SHELL = [
   '/assets/manifest.json',
   '/assets/icon-192.png',
   '/assets/icon-512.png',
+  '/assets/icon-any-512.png',
+  '/assets/icon-maskable-512.png',
   '/assets/apple-touch-icon.png'
 ];
 
