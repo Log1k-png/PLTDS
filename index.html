@@ -99,8 +99,18 @@
           <button id="season-next" class="season-arrow" aria-label="Saison suivante">&#9654;</button>
         </div>
         </div>
-        <button id="share-top-btn" class="btn small primary outline top-share-btn" type="button" aria-label="Partager le classement" title="Partager le lien"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/></svg><span class="sr-only">Partager le classement</span></button>
       </header>
+
+      <div class="league-bar">
+        <span class="league-bar-lock" aria-hidden="true"></span>
+        <div id="league-select" class="league-select" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="league-options" aria-label="Ligue">
+          <button id="league-select-trigger" class="league-select-trigger" type="button">
+            <span id="league-select-current">Ma ligue</span>
+          </button>
+          <div id="league-options" class="league-options" role="listbox" aria-label="Ligues" hidden></div>
+        </div>
+        <button id="share-top-btn" class="btn small primary outline top-share-btn" type="button" aria-label="Partager le classement" title="Partager le lien"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/></svg><span class="sr-only">Partager le classement</span></button>
+      </div>
 
     <main class="content">
       <!-- Loading Overlay -->
@@ -248,7 +258,10 @@
       <section class="bottom-section">
         <div class="bottom-card combined">
           <div class="bottom-card-header">
-            <h2>Joueurs</h2>
+            <h2>Ligue&nbsp;: <span id="league-name-shown" class="league-name">Ma ligue</span></h2>
+            <span class="league-actions">
+              <button id="league-rename-btn" class="league-icon-btn" type="button" aria-label="Renommer la ligue" title="Renommer"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+            </span>
           </div>
           <div class="bottom-card-body">
             <div class="bottom-pane">
@@ -264,8 +277,8 @@
               <p class="sub">Liste des joueurs de votre classement :</p>
               <div id="player-list" class="player-list"></div>
               <div class="manager-actions">
-                <button id="share-btn" class="btn primary outline">Partager</button>
-                <button id="clear-btn" class="btn danger outline">Tout vider</button>
+                <button id="share-btn" class="btn primary outline"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/></svg>Partager</button>
+                <button id="league-delete-btn" class="btn danger outline" type="button"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Supprimer la ligue</button>
               </div>
             </div>
           </div>
@@ -345,6 +358,38 @@
       <div class="app-dialog-footer">
         <button id="confirm-cancel" class="btn secondary" type="button">Annuler</button>
         <button id="confirm-ok" class="btn danger primary" type="button">Confirmer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="league-name-dialog" class="app-dialog confirm-dialog" aria-labelledby="league-name-title">
+    <div class="app-dialog-inner">
+      <div class="app-dialog-header">
+        <h2 id="league-name-title">Nouvelle ligue</h2>
+      </div>
+      <div class="app-dialog-body">
+        <input id="league-name-input" class="app-dialog-field" type="text" maxlength="25" autocomplete="off" aria-label="Nom de la ligue" placeholder="Nom de la ligue (25 caractères max)">
+        <p id="league-name-error" class="dialog-error hidden"></p>
+      </div>
+      <div class="app-dialog-footer">
+        <button id="league-name-cancel" class="btn secondary" type="button">Annuler</button>
+        <button id="league-name-ok" class="btn primary" type="button">Créer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="league-collision-dialog" class="app-dialog confirm-dialog" aria-labelledby="league-collision-title">
+    <div class="app-dialog-inner">
+      <div class="app-dialog-header">
+        <h2 id="league-collision-title">Ligue existante</h2>
+      </div>
+      <div class="app-dialog-body">
+        <p id="league-collision-message" class="confirm-message"></p>
+      </div>
+      <div class="app-dialog-footer">
+        <button id="league-collide-cancel" class="btn secondary" type="button">Annuler</button>
+        <button id="league-collide-rename" class="btn secondary" type="button">Renommer</button>
+        <button id="league-collide-override" class="btn danger primary" type="button">Écraser</button>
       </div>
     </div>
   </dialog>

@@ -114,20 +114,122 @@ a:hover {
   min-width: 160px;
 }
 
-.top-share-btn {
+.league-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem auto 0;
+  padding: 0 1rem;
+  max-width: 960px;
+  width: 100%;
+}
+
+.league-select {
+  position: relative;
+  min-width: 15em;
+}
+
+.league-select-trigger {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background-color: var(--surface);
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="%23a6c0d8" stroke-width="1.5" stroke-linecap="round"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.4rem 2rem 0.4rem 0.7rem;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s;
+}
+.league-select-trigger span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.league-select-trigger:focus-visible,
+.league-select[aria-expanded="true"] .league-select-trigger {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-dim);
+}
+
+.league-options {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 0.3rem;
+  overflow-y: auto;
+  max-height: 16rem;
+}
+
+.league-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.league-option:hover,
+.league-option:focus-visible {
+  background: var(--primary-dim);
+  color: var(--primary);
+  outline: none;
+}
+.league-option.active {
+  color: var(--primary);
+  font-weight: 700;
+}
+.league-option-new {
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border-dim);
+  font-style: italic;
+  color: var(--primary);
+}
+
+.top-share-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0.45rem;
-  border-radius: 999px;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  padding: 0;
 }
 .top-share-btn svg {
   flex: none;
+}
+
+.league-bar-lock {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  visibility: hidden;
 }
 
 #expert-group {
@@ -1033,6 +1135,42 @@ tr.highlighted .user-cell {
   flex-wrap: wrap;
 }
 
+.league-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+.league-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.league-icon-btn:hover {
+  background: var(--primary-dim);
+  color: var(--primary);
+  border-color: rgba(42, 221, 243, 0.4);
+}
+.league-icon-btn.danger:hover {
+  background: var(--danger-dim);
+  color: var(--danger);
+  border-color: rgba(244, 71, 84, 0.4);
+}
+.league-icon-btn:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-dim);
+}
+
 .bottom-card-body {
   padding: 1rem 1.25rem 1.25rem;
   display: grid;
@@ -1201,6 +1339,14 @@ textarea:focus {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+.manager-actions .btn svg {
+  margin-right: 0.35rem;
+  vertical-align: -2px;
+}
+
+.league-name {
+  font-style: italic;
 }
 
 /* ===== Buttons ===== */
@@ -1380,6 +1526,28 @@ textarea:focus {
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text);
+}
+
+.app-dialog-field {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.app-dialog-field:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-dim);
+}
+.dialog-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--danger);
 }
 
 .credits-header {

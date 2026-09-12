@@ -2,12 +2,15 @@
 const API_BASE = '/api';
 const STORAGE_KEY = 'pltds_tracked_v4';
 const EXPERT_KEY = 'pltds_show_expert';
+const DEFAULT_LEAGUE = 'Ma ligue';
+const MAX_LEAGUE_LEN = 25;
 const DIFFICULTIES = ['facile', 'difficile'];
 const DISPLAY_NAMES = { facile: 'Niveau Abordable', difficile: 'Niveau Expert' };
 
 /* ===== State ===== */
 let currentSeason = null;
 let activeSeason = null;
+let activeLeague = null;
 let allSeasons = [];
 let networkDown = false;
 let liveScores = {}; // In-memory only: { seasonNumber: { username: { facile, difficile } } }
@@ -69,12 +72,18 @@ const els = {
   searchBtn: document.getElementById('search-btn'),
   clearSearchBtn: document.getElementById('clear-search-btn'),
   results: document.getElementById('search-results'),
-  clearBtn: document.getElementById('clear-btn'),
   playerList: document.getElementById('player-list'),
+  leagueNameShown: document.getElementById('league-name-shown'),
   playedFacile: document.getElementById('played-facile'),
   playedDifficile: document.getElementById('played-difficile'),
   shareBtn: document.getElementById('share-btn'),
   shareTopBtn: document.getElementById('share-top-btn'),
+  leagueSelect: document.getElementById('league-select'),
+  leagueSelectTrigger: document.getElementById('league-select-trigger'),
+  leagueSelectCurrent: document.getElementById('league-select-current'),
+  leagueOptions: document.getElementById('league-options'),
+  leagueRenameBtn: document.getElementById('league-rename-btn'),
+  leagueDeleteBtn: document.getElementById('league-delete-btn'),
   expertEnableBtn: document.getElementById('expert-enable-btn'),
   expertDisableBtn: document.getElementById('expert-disable-btn'),
   chartsSection: document.getElementById('charts-section'),
@@ -100,40 +109,149 @@ const tables = {
   },
 };
 
-/* ===== Storage (tracked usernames + highlighted player) ===== */
-function loadState() {
+/* ===== Storage (leagues: tracked usernames + highlighted per league) ===== */
+function loadRawState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
+    if (!raw) return null;
     const data = JSON.parse(raw);
-    if (Array.isArray(data)) return { tracked: data };
-    return data && typeof data === 'object' ? data : {};
+    return data && typeof data === 'object' ? data : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
-function loadTracked() {
-  const state = loadState();
-  return Array.isArray(state.tracked) ? state.tracked : [];
-}
-
-function saveTracked(tracked) {
-  const state = loadState();
-  state.tracked = tracked;
+function writeState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function normalizeState() {
+  const raw = loadRawState();
+  if (raw && raw.leagues && typeof raw.leagues === 'object' && Object.keys(raw.leagues).length > 0) {
+    if (!raw.activeLeague || !raw.leagues[raw.activeLeague]) {
+      raw.activeLeague = Object.keys(raw.leagues)[0];
+    }
+    writeState(raw);
+    activeLeague = raw.activeLeague;
+    return;
+  }
+  const legacyTracked = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.tracked) ? raw.tracked : []);
+  const legacyHL = raw && typeof raw === 'object' && typeof raw.highlighted === 'string' && raw.highlighted ? raw.highlighted : null;
+  writeState({
+    activeLeague: DEFAULT_LEAGUE,
+    leagues: { [DEFAULT_LEAGUE]: { tracked: legacyTracked, highlighted: legacyHL } }
+  });
+  activeLeague = DEFAULT_LEAGUE;
+}
+
+function activeLeagueStore() {
+  const state = loadRawState();
+  if (!state || !state.leagues) return null;
+  return state.leagues[activeLeague] || null;
+}
+
+function loadTracked() {
+  const store = activeLeagueStore();
+  return store && Array.isArray(store.tracked) ? store.tracked : [];
+}
+
+function saveTracked(tracked) {
+  const state = loadRawState();
+  if (!state || !state.leagues) return;
+  state.leagues[activeLeague] = { ...(state.leagues[activeLeague] || {}), tracked };
+  writeState(state);
+}
+
 function getHighlighted() {
-  const h = loadState().highlighted;
+  const store = activeLeagueStore();
+  const h = store && store.highlighted;
   return typeof h === 'string' && h.length > 0 ? h : null;
 }
 
 function setHighlighted(username) {
-  const state = loadState();
-  state.highlighted = username || null;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const state = loadRawState();
+  if (!state || !state.leagues) return;
+  state.leagues[activeLeague] = { ...(state.leagues[activeLeague] || {}), highlighted: username || null };
+  writeState(state);
 }
+
+function sanitizeLeagueName(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, MAX_LEAGUE_LEN);
+}
+
+function suggestLeagueName(base) {
+  const name = sanitizeLeagueName(base);
+  const state = loadRawState();
+  if (!state || !state.leagues) return name || DEFAULT_LEAGUE;
+  if (!state.leagues[name]) return name;
+  for (let n = 2; n <= 999; n++) {
+    const suffix = ` (${n})`;
+    const candidate = name.slice(0, MAX_LEAGUE_LEN - suffix.length) + suffix;
+    if (!state.leagues[candidate]) return candidate;
+  }
+  return name.slice(0, MAX_LEAGUE_LEN - 4) + ' copie';
+}
+
+function listLeagues() {
+  const state = loadRawState();
+  return state && state.leagues ? Object.keys(state.leagues) : [DEFAULT_LEAGUE];
+}
+
+function getLeague(name) {
+  const state = loadRawState();
+  return state && state.leagues && state.leagues[name] ? state.leagues[name] : null;
+}
+
+function setActiveLeague(name) {
+  const state = loadRawState();
+  if (!state || !state.leagues || !state.leagues[name]) return false;
+  state.activeLeague = name;
+  writeState(state);
+  activeLeague = name;
+  return true;
+}
+
+function addLeague(name) {
+  const n = sanitizeLeagueName(name);
+  if (!n) return false;
+  const state = loadRawState();
+  if (!state) return false;
+  state.leagues[n] = { ...(state.leagues[n] || { tracked: [], highlighted: null }) };
+  writeState(state);
+  return n;
+}
+
+function renameLeague(oldName, newName) {
+  const n = sanitizeLeagueName(newName);
+  if (!n) return false;
+  const state = loadRawState();
+  if (!state || !state.leagues || !state.leagues[oldName] || (oldName !== n && state.leagues[n])) return false;
+  state.leagues[n] = state.leagues[oldName];
+  if (oldName !== n) delete state.leagues[oldName];
+  if (state.activeLeague === oldName) state.activeLeague = n;
+  if (activeLeague === oldName) activeLeague = n;
+  writeState(state);
+  return true;
+}
+
+function removeLeague(name) {
+  const state = loadRawState();
+  if (!state || !state.leagues || !state.leagues[name]) return false;
+  delete state.leagues[name];
+  const remaining = Object.keys(state.leagues);
+  if (remaining.length === 0) {
+    state.leagues[DEFAULT_LEAGUE] = { tracked: [], highlighted: null };
+    remaining.push(DEFAULT_LEAGUE);
+  }
+  if (state.activeLeague === name || !state.leagues[state.activeLeague]) {
+    state.activeLeague = remaining[0];
+    activeLeague = remaining[0];
+  }
+  writeState(state);
+  return true;
+}
+
+normalizeState();
 
 /* ===== API Helpers ===== */
 async function apiGet(path, params = {}) {
@@ -370,6 +488,292 @@ function openConfirmDialog({ title, message, confirmLabel }) {
     dialog.showModal();
     cancelBtn.focus();
   });
+}
+
+/* ===== League dialogs ===== */
+function openLeagueNameDialog({ title, okLabel, initial = '', isTaken } = {}) {
+  const dialog = document.getElementById('league-name-dialog');
+  if (!dialog || typeof dialog.showModal !== 'function') {
+    const answer = window.prompt(`${title} (${MAX_LEAGUE_LEN} caractères max)`, initial || '');
+    const name = sanitizeLeagueName(answer || '');
+    if (!name || (typeof isTaken === 'function' && isTaken(name))) return Promise.resolve(null);
+    return Promise.resolve(name);
+  }
+  const titleEl = document.getElementById('league-name-title');
+  const input = document.getElementById('league-name-input');
+  const errorEl = document.getElementById('league-name-error');
+  const okBtn = document.getElementById('league-name-ok');
+  const cancelBtn = document.getElementById('league-name-cancel');
+  titleEl.textContent = title;
+  okBtn.textContent = okLabel || 'OK';
+  input.value = initial;
+  input.setAttribute('maxlength', String(MAX_LEAGUE_LEN));
+  errorEl.textContent = '';
+  errorEl.classList.add('hidden');
+
+  return new Promise(resolve => {
+    let settled = false;
+
+    function settle(value) {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.removeEventListener('click', onBackdrop);
+      dialog.removeEventListener('cancel', onCancel);
+      okBtn.removeEventListener('click', submit);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKeydown);
+      input.removeEventListener('input', onInput);
+      resolve(value);
+    }
+
+    function submit() {
+      const name = sanitizeLeagueName(input.value);
+      if (!name) {
+        errorEl.textContent = 'Le nom ne peut pas être vide.';
+        errorEl.classList.remove('hidden');
+        input.focus();
+        return;
+      }
+      if (typeof isTaken === 'function' && isTaken(name)) {
+        errorEl.textContent = `Une ligue « ${name} » existe déjà.`;
+        errorEl.classList.remove('hidden');
+        input.focus();
+        return;
+      }
+      settle(name);
+    }
+
+    function onCancel() { settle(null); }
+    function onInput() { errorEl.classList.add('hidden'); }
+    function onBackdrop(e) {
+      const rect = dialog.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) settle(null);
+    }
+    function onKeydown(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submit();
+      }
+    }
+
+    dialog.addEventListener('click', onBackdrop);
+    dialog.addEventListener('cancel', onCancel);
+    okBtn.addEventListener('click', submit);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKeydown);
+    input.addEventListener('input', onInput);
+    dialog.showModal();
+    input.focus();
+    input.select();
+  });
+}
+
+function openLeagueCollisionDialog({ message }) {
+  const dialog = document.getElementById('league-collision-dialog');
+  if (!dialog || typeof dialog.showModal !== 'function') {
+    return Promise.resolve(window.confirm(message) ? 'override' : 'cancel');
+  }
+  const messageEl = document.getElementById('league-collision-message');
+  const overrideBtn = document.getElementById('league-collide-override');
+  const renameBtn = document.getElementById('league-collide-rename');
+  const cancelBtn = document.getElementById('league-collide-cancel');
+  messageEl.textContent = message;
+
+  return new Promise(resolve => {
+    let settled = false;
+
+    function settle(value) {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.removeEventListener('click', onBackdrop);
+      dialog.removeEventListener('cancel', onCancel);
+      overrideBtn.removeEventListener('click', onOverride);
+      renameBtn.removeEventListener('click', onRename);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(value);
+    }
+
+    function onOverride() { settle('override'); }
+    function onRename() { settle('rename'); }
+    function onCancel() { settle('cancel'); }
+    function onBackdrop(e) {
+      const rect = dialog.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) settle('cancel');
+    }
+
+    dialog.addEventListener('click', onBackdrop);
+    dialog.addEventListener('cancel', onCancel);
+    overrideBtn.addEventListener('click', onOverride);
+    renameBtn.addEventListener('click', onRename);
+    cancelBtn.addEventListener('click', onCancel);
+    dialog.showModal();
+  });
+}
+
+/* ===== League management ===== */
+function toggleLeagueSelect(open) {
+  const panel = els.leagueOptions;
+  if (!panel) return;
+  const shouldOpen = typeof open === 'boolean' ? open : panel.hidden;
+  panel.hidden = !shouldOpen;
+  if (els.leagueSelect) els.leagueSelect.setAttribute('aria-expanded', String(shouldOpen));
+}
+
+function renderLeagueSelect() {
+  if (!els.leagueOptions) return;
+  const names = listLeagues();
+  els.leagueOptions.innerHTML = names
+    .map(n => {
+      const active = n === activeLeague;
+      return `<button type="button" class="league-option${active ? ' active' : ''}" role="option" aria-selected="${active}" data-league="${escapeHtml(n)}">${escapeHtml(n)}</button>`;
+    })
+    .join('') +
+    '<button type="button" class="league-option league-option-new" role="option" data-action="new">+ Nouvelle ligue…</button>';
+  if (els.leagueSelectCurrent) els.leagueSelectCurrent.textContent = activeLeague || '';
+  toggleLeagueSelect(false);
+  updateLeagueNameDisplay();
+}
+
+function updateLeagueNameDisplay() {
+  if (els.leagueNameShown) els.leagueNameShown.textContent = activeLeague || '';
+}
+
+async function renderLeagueContent() {
+  renderAllTables();
+  await loadRecentScores(true).catch(() => {});
+  if (activeSeason) {
+    invalidateCharts();
+    await fetchAllTrackedScores(activeSeason).then(() => renderAllTables()).catch(() => {});
+  }
+}
+
+async function switchLeague(name) {
+  if (!name || name === activeLeague) return;
+  if (!setActiveLeague(name)) return;
+  renderLeagueSelect();
+  await renderLeagueContent();
+}
+
+async function onAddLeague() {
+  const name = await openLeagueNameDialog({
+    title: 'Nouvelle ligue',
+    okLabel: 'Créer',
+    isTaken: n => !!getLeague(n)
+  });
+  if (!name) return;
+  addLeague(name);
+  renderLeagueSelect();
+  await switchLeague(name);
+  showToast(`Ligue « ${name} » créée.`, 'success');
+}
+
+async function onRenameLeague() {
+  const old = activeLeague;
+  const name = await openLeagueNameDialog({
+    title: 'Renommer la ligue',
+    okLabel: 'Renommer',
+    initial: old,
+    isTaken: n => n !== old && !!getLeague(n)
+  });
+  if (!name || name === old) return;
+  if (renameLeague(old, name)) {
+    renderLeagueSelect();
+    renderAllTables();
+    showToast(`Ligue renommée « ${name} ».`, 'success');
+  }
+}
+
+async function onDeleteLeague() {
+  if (listLeagues().length <= 1) {
+    await clearAll();
+    return;
+  }
+  const name = activeLeague;
+  const ok = await openConfirmDialog({
+    title: 'Supprimer la ligue',
+    message: `Supprimer la ligue « ${name} » et tous ses joueurs ?`,
+    confirmLabel: 'Supprimer'
+  });
+  if (!ok) return;
+  removeLeague(name);
+  renderLeagueSelect();
+  await renderLeagueContent();
+  showToast(`Ligue « ${name} » supprimée.`);
+}
+
+function initLeagues() {
+  if (!els.leagueSelect || !els.leagueOptions) return;
+  renderLeagueSelect();
+
+  els.leagueSelectTrigger.addEventListener('click', () => {
+    if (els.leagueOptions.hidden) {
+      toggleLeagueSelect(true);
+      const active = els.leagueOptions.querySelector('.league-option.active') ||
+        els.leagueOptions.querySelector('.league-option');
+      if (active) active.focus();
+    } else {
+      toggleLeagueSelect(false);
+    }
+  });
+  els.leagueSelectTrigger.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      toggleLeagueSelect(false);
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      toggleLeagueSelect(true);
+      const items = [...els.leagueOptions.querySelectorAll('.league-option')];
+      if (items.length === 0) return;
+      items[e.key === 'ArrowUp' ? items.length - 1 : 0].focus();
+    }
+  });
+
+  els.leagueOptions.addEventListener('click', e => {
+    const option = e.target.closest('.league-option');
+    if (!option) return;
+    toggleLeagueSelect(false);
+    els.leagueSelectTrigger.focus();
+    if (option.dataset.action === 'new') {
+      onAddLeague();
+      return;
+    }
+    const league = option.dataset.league;
+    if (league && league !== activeLeague) switchLeague(league);
+  });
+
+  els.leagueOptions.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      toggleLeagueSelect(false);
+      els.leagueSelectTrigger.focus();
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const items = [...els.leagueOptions.querySelectorAll('.league-option')];
+      const idx = items.indexOf(e.target.closest('.league-option'));
+      if (idx === -1 || items.length === 0) return;
+      const next = items[(idx + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
+      next.focus();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (els.leagueOptions.hidden) return;
+    if (!e.target.closest('#league-select')) toggleLeagueSelect(false);
+  });
+
+  if (els.leagueRenameBtn) els.leagueRenameBtn.addEventListener('click', onRenameLeague);
+  if (els.leagueDeleteBtn) els.leagueDeleteBtn.addEventListener('click', onDeleteLeague);
 }
 
 /* ===== Data Mutation ===== */
@@ -687,12 +1091,10 @@ function renderPlayerManager() {
 
   if (tracked.length === 0) {
     els.playerList.innerHTML = '<span class="manager-empty">Aucun joueur suivi.</span>';
-    els.clearBtn.style.display = 'none';
     els.shareBtn.style.display = 'none';
     return;
   }
 
-  els.clearBtn.style.display = '';
   els.shareBtn.style.display = '';
   const sorted = [...tracked].sort((a, b) => a.localeCompare(b));
   sorted.forEach(username => {
@@ -989,6 +1391,7 @@ function generateShareUrl() {
   if (tracked.length === 0) return null;
   const url = new URL(cleanBaseUrl());
   url.searchParams.set('players', tracked.join(','));
+  if (activeLeague) url.searchParams.set('league', activeLeague);
   if (activeSeason !== currentSeason) url.searchParams.set('season', activeSeason);
   return url.toString();
 }
@@ -997,6 +1400,7 @@ async function autoLoadFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const playersParam = params.get('players');
   const seasonParam = parseInt(params.get('season'), 10);
+  const leagueParam = params.get('league');
 
   if (!playersParam) return;
 
@@ -1005,6 +1409,55 @@ async function autoLoadFromUrl() {
 
   if (seasonParam && allSeasons.some(s => s.number === seasonParam)) {
     activeSeason = seasonParam;
+  }
+
+  const incoming = usernames.filter((u, i) => usernames.indexOf(u) === i).sort();
+  let resolved = false;
+
+  if (leagueParam) {
+    const target = sanitizeLeagueName(leagueParam);
+    const existing = target ? getLeague(target) : null;
+    if (existing) {
+      const current = (Array.isArray(existing.tracked) ? existing.tracked : [])
+        .filter((u, i, a) => a.indexOf(u) === i).sort();
+      const same = current.length === incoming.length && current.every((u, i) => u === incoming[i]);
+      if (same) {
+        resolved = setActiveLeague(target);
+      } else {
+        const choice = await openLeagueCollisionDialog({
+          message: `Une ligue « ${target} » existe déjà avec une liste de joueurs différente. Que faire ?`
+        });
+        if (choice === 'override') {
+          const state = loadRawState();
+          state.leagues[target] = {
+            tracked: incoming,
+            highlighted: existing.highlighted && incoming.includes(existing.highlighted) ? existing.highlighted : null
+          };
+          writeState(state);
+          resolved = setActiveLeague(target);
+        } else if (choice === 'rename') {
+          const newName = await openLeagueNameDialog({
+            title: 'Renommer la ligue',
+            okLabel: 'Créer',
+            initial: suggestLeagueName(target),
+            isTaken: n => !!getLeague(n)
+          });
+          if (newName) {
+            addLeague(newName);
+            resolved = setActiveLeague(newName);
+          }
+        }
+      }
+    } else if (target) {
+      addLeague(target);
+      resolved = setActiveLeague(target);
+    }
+    renderLeagueSelect();
+  }
+
+  if (!resolved && leagueParam) {
+    // Ligue nommée dans le lien mais action annulée : on ne modifie rien.
+    return;
   }
 
   if (window.history && window.history.replaceState) {
@@ -1112,6 +1565,7 @@ function exportEvolutionCsv() {
 const CHART_IMG_BG = '#181f26';
 const CHART_IMG_TEXT = '#a6c0d8';
 const CHART_IMG_GOLD = '#ecca25';
+const CHART_IMG_LINK = '#2addf3';
 const CHART_IMG_STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
   rect.background { fill: ${CHART_IMG_BG}; }
@@ -1135,6 +1589,7 @@ function loadSvgAsImage(xml) {
 }
 
 function renderChartBlob(svg, title, caption) {
+  const source = cleanBaseUrl();
   const clone = svg.cloneNode(true);
   clone.removeAttribute('id');
   const vb = clone.viewBox.baseVal;
@@ -1169,9 +1624,11 @@ function renderChartBlob(svg, title, caption) {
       const pad = 24;
       const titleSize = 17;
       const captionSize = 12;
+      const sourceSize = 10;
       const itemSize = 13;
       const rowGap = 6;
       const legendGap = 14;
+      const sourceH = source ? sourceSize + 6 : 0;
       const titleH = titleSize + 8;
       const captionH = caption ? captionSize + 6 : 0;
       const canvasW = img.width;
@@ -1192,7 +1649,7 @@ function renderChartBlob(svg, title, caption) {
 
       const canvas = document.createElement('canvas');
       canvas.width = (canvasW + pad * 2) * scale;
-      canvas.height = (pad + titleH + captionH + img.height + legendGap + legendH + pad) * scale;
+      canvas.height = (pad + titleH + captionH + img.height + legendGap + legendH + sourceH + pad) * scale;
       const ctx = canvas.getContext('2d');
       ctx.scale(scale, scale);
 
@@ -1243,6 +1700,20 @@ function renderChartBlob(svg, title, caption) {
         });
       }
 
+      if (source) {
+        const label = 'Statistiques copiés depuis : ';
+        const y = pad + titleH + captionH + img.height + legendGap + legendH + sourceSize;
+        const rightX = canvasW + pad;
+        ctx.font = `italic 400 ${sourceSize}px Lato, system-ui, sans-serif`;
+        ctx.textAlign = 'right';
+        const urlW = ctx.measureText(source).width;
+        ctx.fillStyle = CHART_IMG_TEXT;
+        ctx.fillText(label, rightX - urlW, y);
+        ctx.fillStyle = CHART_IMG_LINK;
+        ctx.fillText(source, rightX, y);
+        ctx.textAlign = 'left';
+      }
+
       return canvas;
     })
     .then(canvas => new Promise((resolve, reject) => {
@@ -1252,9 +1723,9 @@ function renderChartBlob(svg, title, caption) {
 
 function copyChartAsImage(svg, title) {
   const season = allSeasons.find(s => s.number === activeSeason);
-  const caption = season ? `Saison ${activeSeason} — ${season.name}` : `Saison ${activeSeason}`;
-
-  const blobPromise = renderChartBlob(svg, title, caption);
+  const leaguePart = activeLeague ? `Ligue « ${activeLeague} » — ` : '';
+  const caption = season ? `${leaguePart}Saison ${activeSeason} — ${season.name}` : `${leaguePart}Saison ${activeSeason}`;
+  const blobPromise = renderChartBlob(svg, `${title} La Table des Savoirs`, caption);
 
   if (supportsImageCopy()) {
     navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })])
@@ -1306,7 +1777,7 @@ function shareTop() {
     });
 
   if (navigator.share) {
-    navigator.share({ title: 'La Table des Scores', url })
+    navigator.share({ title: 'La Table des Scores', text: `Viens rejoindre ma ligue « ${activeLeague} » !`, url })
       .then(() => showToast('Partagé !'))
       .catch(err => {
         if (err && err.name === 'AbortError') return;
@@ -1339,7 +1810,7 @@ function copyScoreboard(difficulty) {
 
   const season = (allSeasons.find(s => s.number === activeSeason) || {});
   const text = [
-    `La Table des Savoirs — ${label} — Saison ${activeSeason}${season.name ? ` (${season.name})` : ''}`,
+    `La Table des Savoirs — Ligue « ${activeLeague} » — ${label} — Saison ${activeSeason}${season.name ? ` (${season.name})` : ''}`,
     '',
     ...matrix.map(line),
   ].join('\n');
@@ -1980,7 +2451,7 @@ els.input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.ctrlKey) runSearch();
 });
 
-els.clearBtn.addEventListener('click', clearAll);
+initLeagues();
 els.shareBtn.addEventListener('click', shareLeaderboard);
 if (els.shareTopBtn) els.shareTopBtn.addEventListener('click', shareTop);
 document.addEventListener('click', e => {
