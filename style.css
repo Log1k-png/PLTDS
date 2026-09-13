@@ -118,7 +118,7 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.5rem;
   margin: 0.75rem auto 0;
   padding: 0 1rem;
@@ -128,7 +128,8 @@ a:hover {
 
 .league-select {
   position: relative;
-  min-width: 15em;
+  flex: 0 1 15em;
+  min-width: 0;
 }
 
 .league-select-trigger {
@@ -700,6 +701,40 @@ tbody tr:hover {
   font-weight: 700;
   color: var(--text);
 }
+.score-cell .score-profile-link {
+  color: var(--text);
+  text-decoration: none;
+}
+.score-cell .score-profile-link:hover,
+.score-cell .score-profile-link:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.score-cell .score-profile-link:hover .score-badge,
+.score-cell .score-profile-link:focus-visible .score-badge {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* Player profile link (external icon) */
+.profile-link {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  line-height: 1;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.profile-link:hover,
+.profile-link:focus-visible {
+  color: var(--primary);
+}
+.player-row .profile-link {
+  width: 20px;
+  height: 20px;
+}
 
 .user-cell {
   overflow: hidden;
@@ -1242,9 +1277,17 @@ textarea:focus {
 }
 .result-table .td-pseudo .pseudo-inner {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.result-table .td-pseudo .pseudo-profile-link {
+  color: var(--text);
+  text-decoration: none;
+}
+.result-table .td-pseudo .pseudo-profile-link:hover,
+.result-table .td-pseudo .pseudo-profile-link:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
 }
 .result-table th:nth-child(1),
 .result-table td:nth-child(1) { width: auto; }
@@ -1253,9 +1296,7 @@ textarea:focus {
 .result-table th:nth-child(3),
 .result-table td:nth-child(3) { width: 76px; }
 .result-table th:nth-child(4),
-.result-table td:nth-child(4) { width: 62px; }
-.result-table th:nth-child(5),
-.result-table td:nth-child(5) { width: 108px; }
+.result-table td:nth-child(4) { width: 108px; }
 
 /* Etat "Deja suivi" d'un resultat de recherche (remplace le bouton Ajouter) */
 .btn.result-added {
@@ -1264,6 +1305,31 @@ textarea:focus {
   background: rgba(52, 211, 153, 0.12);
   border: 1px solid rgba(52, 211, 153, 0.45);
   color: #6ee7b7;
+}
+
+/* Bouton compact sur mobile : seul le symbole + / ✓ reste visible */
+@media (max-width: 799px) {
+  .result-table th:nth-child(4),
+  .result-table td:nth-child(4) {
+    width: 44px;
+  }
+  .result-table .add-btn.btn.small {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .result-table .add-btn.btn.small::before {
+    content: '+';
+    font-size: 18px;
+  }
+  .result-table .add-btn.btn.small.result-added::before {
+    content: '\2713';
+  }
 }
 
 /* ===== Player Manager ===== */
@@ -1310,7 +1376,12 @@ textarea:focus {
   color: var(--danger);
   font-size: 0.9rem;
   line-height: 1;
-  padding: 0.2rem 0.55rem;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
   transition: background 0.15s, border-color 0.15s;
 }

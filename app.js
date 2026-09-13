@@ -6,6 +6,10 @@ const DEFAULT_LEAGUE = 'Ma ligue';
 const MAX_LEAGUE_LEN = 25;
 const DIFFICULTIES = ['facile', 'difficile'];
 const DISPLAY_NAMES = { facile: 'Niveau Abordable', difficile: 'Niveau Expert' };
+const DISPLAY_NAMES_SHORT = { facile: 'Abordable', difficile: 'Expert' };
+const PLAYER_PROFILE_BASE = 'https://latabledessavoirs.fr/joueur/';
+const playerProfileUrl = u => PLAYER_PROFILE_BASE + encodeURIComponent(u);
+const PROFILE_ICON_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
 
 /* ===== State ===== */
 let currentSeason = null;
@@ -922,15 +926,14 @@ if (document.readyState === 'loading') {
 
 function createResultRow(entry, difficulty) {
   const tr = document.createElement('tr');
-  const diffLabel = DISPLAY_NAMES[difficulty];
+  const diffLabel = DISPLAY_NAMES_SHORT[difficulty];
   const already = loadTracked().includes(entry.username);
 
   tr.innerHTML = `
-    <td class="td-pseudo" title="${escapeHtml(entry.username)}"><span class="pseudo-inner">${escapeHtml(entry.username)}</span></td>
+    <td class="td-pseudo" title="${escapeHtml(entry.username)}"><a class="pseudo-inner pseudo-profile-link" href="${playerProfileUrl(entry.username)}" target="_blank" rel="noopener noreferrer" aria-label="Profil de ${escapeHtml(entry.username)}" title="Profil de ${escapeHtml(entry.username)}">${escapeHtml(entry.username)}</a></td>
     <td>${diffLabel}</td>
     <td class="score-cell">${entry.score.toLocaleString('fr-FR')}</td>
-    <td class="rank-off-cell">#${entry.rank.toLocaleString('fr-FR')}</td>
-    <td><button class="btn small add-btn${already ? ' result-added' : ' primary'}"${already ? ' disabled' : ''}>${already ? 'Déjà suivi ✓' : 'Ajouter'}</button></td>
+    <td><button class="btn small add-btn${already ? ' result-added' : ' primary'}"${already ? ' disabled' : ''} aria-label="${already ? 'Déjà suivi' : `Ajouter ${escapeHtml(entry.username)}`}" title="${already ? 'Déjà suivi' : `Ajouter ${escapeHtml(entry.username)}`}">${already ? 'Déjà suivi ✓' : 'Ajouter'}</button></td>
   `;
 
   const btn = tr.querySelector('.add-btn');
@@ -962,7 +965,6 @@ function renderResults(resultsMap) {
         <th>Pseudo</th>
         <th>Niveau</th>
         <th>Score</th>
-        <th>Rang</th>
         <th></th>
       </tr>
     </thead>
@@ -1054,7 +1056,7 @@ function renderDifficultyTable(difficulty) {
   sorted.forEach((p, idx) => {
     const info = p[difficulty];
     const pos = info ? idx + 1 : '—';
-    const score = info
+    const scoreRaw = info
       ? (idx < 3
           ? `<span class="score-badge">${info.score.toLocaleString('fr-FR')}</span>`
           : info.score.toLocaleString('fr-FR'))
@@ -1076,7 +1078,7 @@ function renderDifficultyTable(difficulty) {
     tr.innerHTML = `
       <td class="rank-cell">${pos}</td>
       <td class="user-cell" data-username="${escapeHtml(p.username)}" title="${escapeHtml(p.username)}">${escapeHtml(p.username)}</td>
-      <td class="score-cell">${score}</td>
+      <td class="score-cell"><a class="score-profile-link" href="${playerProfileUrl(p.username)}" target="_blank" rel="noopener noreferrer" aria-label="Profil de ${escapeHtml(p.username)}" title="Profil de ${escapeHtml(p.username)}">${scoreRaw}</a></td>
       <td class="today-cell">${todayCell}</td>
       <td class="yesterday-cell">${yesterdayCell}</td>
       <td class="rank-off-cell">${rank}</td>
@@ -1110,10 +1112,20 @@ function renderPlayerManager() {
     remove.type = 'button';
     remove.title = `Retirer ${username}`;
     remove.setAttribute('aria-label', `Retirer ${username}`);
-    remove.textContent = '\u00D7';
+    remove.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
     remove.addEventListener('click', () => removeTrackedPlayer(username));
 
+    const profile = document.createElement('a');
+    profile.className = 'profile-link';
+    profile.href = playerProfileUrl(username);
+    profile.target = '_blank';
+    profile.rel = 'noopener noreferrer';
+    profile.title = `Profil de ${username}`;
+    profile.setAttribute('aria-label', `Profil de ${username}`);
+    profile.innerHTML = PROFILE_ICON_SVG;
+
     row.appendChild(name);
+    row.appendChild(profile);
     row.appendChild(remove);
     els.playerList.appendChild(row);
   });
