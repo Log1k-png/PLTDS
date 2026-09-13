@@ -1577,6 +1577,7 @@ textarea:focus {
   border-top: 1px solid var(--border-dim);
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.6rem;
 }
 .app-dialog-footer .btn {
@@ -1597,6 +1598,31 @@ textarea:focus {
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text);
+}
+
+#league-collide-rename {
+  border-color: var(--danger);
+}
+
+#league-collision-dialog .app-dialog-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+#league-collision-dialog .app-dialog-footer .btn {
+  width: 100%;
+  min-width: 0;
+}
+#league-collision-dialog #league-collide-override {
+  grid-column: 1 / -1;
+}
+
+.app-dialog-footer:has(.btn:nth-child(2):last-child) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.app-dialog-footer:has(.btn:nth-child(2):last-child) .btn {
+  width: 100%;
+  min-width: 0;
 }
 
 .app-dialog-field {

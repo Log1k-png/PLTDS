@@ -9,7 +9,7 @@
  * en compte), et le cache permet l'ouverture du site sans connexion.
  */
 
-const CACHE = 'pltds-shell-v7';
+const CACHE = 'pltds-shell-v11';
 
 const SHELL = [
   '/',
