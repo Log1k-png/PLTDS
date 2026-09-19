@@ -38,6 +38,12 @@ export default {
 
     // Proxy /api/* vers l'API externe
     if (url.pathname.startsWith('/api/')) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return new Response('Method not allowed', {
+          status: 405,
+          headers: { 'allow': 'GET, HEAD', 'cache-control': 'no-store' },
+        });
+      }
       // Recupere le chemin API sans le prefixe /api/
       const apiPath = url.pathname.slice(5); // enleve '/api/'
 
@@ -60,10 +66,13 @@ export default {
       });
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         const upstream = await fetch(new Request(targetUrl, {
           method: request.method,
           headers: { 'Accept': 'application/json' },
-        }));
+          signal: controller.signal,
+        })).finally(() => clearTimeout(timeoutId));
         return new Response(upstream.body, {
           status: upstream.status,
           statusText: upstream.statusText,
@@ -73,8 +82,9 @@ export default {
           },
         });
       } catch (err) {
-        return new Response(JSON.stringify({ error: 'Proxy error', message: err.message }), {
-          status: 502,
+        const timedOut = err && err.name === 'AbortError';
+        return new Response(JSON.stringify({ error: timedOut ? 'Upstream timeout' : 'Proxy error' }), {
+          status: timedOut ? 504 : 502,
           headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
         });
       }

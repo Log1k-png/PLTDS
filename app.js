@@ -46,6 +46,9 @@ let refreshPending = false; // guards against concurrent refreshAll() runs
 let showExpert = false; // 'difficile' section enabled (persisted in localStorage)
 let flashName = null; // joueur fraichement ajoute : flash son chip dans le manager
 const addingPlayers = new Set(); // ajouts en cours (evite les doubles fetches concurrents)
+let chartLoadId = 0;
+let searchLoadId = 0;
+let answerSummaryFormat = 'percentage';
 
 function loadShowExpert() {
   try {
@@ -58,6 +61,12 @@ showExpert = loadShowExpert();
 
 function enabledDifficulties() {
   return showExpert ? DIFFICULTIES : ['facile'];
+}
+
+function preferredScrollBehavior() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth';
 }
 
 /* ===== DOM Elements ===== */
@@ -101,6 +110,7 @@ const els = {
   answerMaskDialog: document.getElementById('answer-mask-dialog'),
   answerMaskTitle: document.getElementById('answer-mask-title'),
   answerMaskSummary: document.getElementById('answer-mask-summary'),
+  answerMaskLabel: document.getElementById('answer-mask-label'),
   answerMaskScore: document.getElementById('answer-mask-score'),
   answerMaskGrid: document.getElementById('answer-mask-grid'),
   answerMaskClose: document.getElementById('answer-mask-close'),
@@ -362,10 +372,6 @@ function loadPlayerHistory(username, season) {
   const key = `${season}\u0000${username}`;
   if (!profileHistoryLoads.has(key)) {
     const load = fetchPlayerHistory(username, season)
-      .catch(err => {
-        console.warn(`Failed to load history for ${username}/${season}:`, err);
-        return Object.create(null);
-      })
       .then(history => {
         profileHistoryForSeason(season)[username] = history;
         return history;
@@ -387,7 +393,12 @@ async function ensureProfileHistories(season, onProgress) {
   async function worker() {
     while (pending.length > 0) {
       const username = pending.pop();
-      await loadPlayerHistory(username, season);
+      try {
+        await loadPlayerHistory(username, season);
+      } catch (err) {
+        // Do not cache a failed request: the next load can retry this player.
+        console.warn(`Failed to load history for ${username}/${season}:`, err);
+      }
       done++;
       if (onProgress) onProgress(done, total);
     }
@@ -717,9 +728,9 @@ function updateLeagueNameDisplay() {
 
 async function renderLeagueContent() {
   renderAllTables();
+  invalidateCharts();
   await loadRecentScores().catch(() => {});
   if (activeSeason) {
-    invalidateCharts();
     await fetchAllTrackedScores(activeSeason).then(() => renderAllTables()).catch(() => {});
   }
 }
@@ -727,6 +738,7 @@ async function renderLeagueContent() {
 async function switchLeague(name) {
   if (!name || name === activeLeague) return;
   if (!setActiveLeague(name)) return;
+  searchLoadId++;
   renderLeagueSelect();
   await renderLeagueContent();
 }
@@ -1091,10 +1103,12 @@ const ANSWER_MASK_META = {
 
 function openAnswerMaskDialog(username, difficulty, period, entry) {
   if (!els.answerMaskDialog || !els.answerMaskGrid || !Array.isArray(entry.answerMask)) return;
+  els.answerMaskDialog.classList.remove('answer-summary-dialog');
   const label = period === 'today' ? "Aujourd'hui" : 'Hier';
   const level = DISPLAY_NAMES_SHORT[difficulty] || difficulty;
   els.answerMaskTitle.textContent = `${username} - ${label}`;
   els.answerMaskSummary.textContent = `Niveau ${level}`;
+  els.answerMaskLabel.textContent = 'Score';
   els.answerMaskScore.textContent = `${entry.score.toLocaleString('fr-FR')} pts`;
   els.answerMaskGrid.replaceChildren();
   for (let i = 0; i < 10; i++) {
@@ -1109,17 +1123,84 @@ function openAnswerMaskDialog(username, difficulty, period, entry) {
   els.answerMaskDialog.showModal();
 }
 
+function answerSummaryForDay(difficulty, period) {
+  const scores = period === 'today' ? todayScores : yesterdayScores;
+  const entries = scores && scores[difficulty]
+    ? [...scores[difficulty].values()].filter(entry => Array.isArray(entry.answerMask) && entry.answerMask.length >= 10)
+    : [];
+  return {
+    participants: entries.length,
+    correct: Array.from({ length: 10 }, (_, index) =>
+      entries.filter(entry => entry.answerMask[index] === 2).length
+    ),
+  };
+}
+
+function openAnswerSummaryDialog(difficulty, period) {
+  if (!els.answerMaskDialog || !els.answerMaskGrid) return;
+  const summary = answerSummaryForDay(difficulty, period);
+  if (summary.participants === 0) return;
+  const label = period === 'today' ? "Aujourd'hui" : 'Hier';
+  const level = DISPLAY_NAMES_SHORT[difficulty] || difficulty;
+  els.answerMaskDialog.classList.add('answer-summary-dialog');
+  els.answerMaskTitle.textContent = `Réponses - ${label}`;
+  els.answerMaskSummary.textContent = `Niveau ${level} - Réponses correctes`;
+  els.answerMaskLabel.textContent = '';
+  els.answerMaskScore.textContent = '';
+  els.answerMaskGrid.replaceChildren();
+  summary.correct.forEach((count, index) => {
+    const ratio = count / summary.participants;
+    const square = document.createElement('span');
+    square.className = 'answer-mask-square answer-summary-square';
+    square.style.setProperty('--progress', ratio);
+    const question = document.createElement('span');
+    question.className = 'answer-summary-question';
+    question.textContent = index + 1;
+    const percentage = document.createElement('button');
+    percentage.type = 'button';
+    percentage.className = 'answer-summary-percentage';
+    percentage.textContent = answerSummaryFormat === 'fraction'
+      ? `${count}/${summary.participants}`
+      : `${Math.round(ratio * 100)}%`;
+    percentage.setAttribute('aria-label', `Question ${index + 1} : basculer vers ${answerSummaryFormat === 'fraction' ? 'le pourcentage' : 'la fraction'}`);
+    percentage.addEventListener('click', () => {
+      answerSummaryFormat = answerSummaryFormat === 'fraction' ? 'percentage' : 'fraction';
+      openAnswerSummaryDialog(difficulty, period);
+    });
+    square.append(question, percentage);
+    square.setAttribute('role', 'listitem');
+    square.setAttribute('aria-label', `Question ${index + 1} : ${count} réponse${count > 1 ? 's' : ''} correcte${count > 1 ? 's' : ''} sur ${summary.participants}`);
+    els.answerMaskGrid.appendChild(square);
+  });
+  if (!els.answerMaskDialog.open) els.answerMaskDialog.showModal();
+}
+
+function updateAnswerSummaryHeaders() {
+  document.querySelectorAll('.day-summary-header').forEach(button => {
+    const summary = answerSummaryForDay(button.dataset.difficulty, button.dataset.period);
+    const available = activeSeason === currentSeason && summary.participants > 0;
+    button.disabled = !available;
+    button.setAttribute('aria-label', available
+      ? `Voir le détail des réponses ${button.textContent}, niveau ${DISPLAY_NAMES_SHORT[button.dataset.difficulty] || button.dataset.difficulty}`
+      : `Détail des réponses ${button.textContent} indisponible`);
+  });
+}
+
 function formatDayCell(entry, isToday, isLoading, username, difficulty) {
   let scoreLine;
   let correctLine = '<span class="day-correct">&nbsp;</span>';
+  let action = null;
 
   if (isLoading) {
     scoreLine = '<span class="day-loading">…</span>';
   } else if (entry) {
     const score = entry.score.toLocaleString('fr-FR');
     const scoreClass = isToday ? 'today-score' : 'day-score';
+    action = Array.isArray(entry.answerMask)
+      ? ` data-period="${isToday ? 'today' : 'yesterday'}" data-username="${escapeHtml(username)}" data-difficulty="${difficulty}" aria-label="Voir les réponses de ${escapeHtml(username)} ${isToday ? "aujourd'hui" : 'hier'}, niveau ${difficulty}"`
+      : null;
     scoreLine = Array.isArray(entry.answerMask)
-      ? `<button class="day-score-btn ${scoreClass}" type="button" data-period="${isToday ? 'today' : 'yesterday'}" data-username="${escapeHtml(username)}" data-difficulty="${difficulty}" aria-label="Voir les réponses de ${escapeHtml(username)} ${isToday ? "aujourd'hui" : 'hier'}, niveau ${difficulty}">${score}</button>`
+      ? `<span class="${scoreClass}">${score}</span>`
       : `<span class="${scoreClass}">${score}</span>`;
     if (entry.correctCount != null) {
       correctLine = `<span class="day-correct">${entry.correctCount}/10</span>`;
@@ -1128,7 +1209,9 @@ function formatDayCell(entry, isToday, isLoading, username, difficulty) {
     scoreLine = '<span class="day-score">—</span>';
   }
 
-  return `<span class="day-cell">${scoreLine}${correctLine}</span>`;
+  return action
+    ? `<button class="day-cell day-cell-btn" type="button"${action}>${scoreLine}${correctLine}</button>`
+    : `<span class="day-cell">${scoreLine}${correctLine}</span>`;
 }
 
 function renderDifficultyTable(difficulty) {
@@ -1174,7 +1257,7 @@ function renderDifficultyTable(difficulty) {
 
     tr.innerHTML = `
       <td class="rank-cell">${pos}</td>
-      <td class="user-cell" data-username="${escapeHtml(p.username)}" title="${escapeHtml(p.username)}">${escapeHtml(p.username)}</td>
+      <td><button class="user-cell" type="button" data-username="${escapeHtml(p.username)}" title="${escapeHtml(p.username)}" aria-expanded="false" aria-keyshortcuts="Alt+Enter" aria-label="${escapeHtml(p.username)}. Alt+Entrée pour marquer comme votre joueur.">${escapeHtml(p.username)}</button></td>
       <td class="score-cell"><a class="score-profile-link" href="${playerProfileUrl(p.username)}" target="_blank" rel="noopener noreferrer" aria-label="Profil de ${escapeHtml(p.username)}" title="Profil de ${escapeHtml(p.username)}">${scoreRaw}</a></td>
       <td class="today-cell">${todayCell}</td>
       <td class="yesterday-cell">${yesterdayCell}</td>
@@ -1240,7 +1323,7 @@ function scrollPlayerListTo(username) {
   let target = null;
   if (top < list.scrollTop) target = top;
   else if (bottom > list.scrollTop + list.clientHeight) target = bottom - list.clientHeight;
-  if (target !== null) list.scrollTo({ top: target, behavior: 'smooth' });
+  if (target !== null) list.scrollTo({ top: target, behavior: preferredScrollBehavior() });
 }
 
 function updateResultRowStates() {
@@ -1267,6 +1350,7 @@ function renderAllTables() {
   renderPlayedToday();
   renderDifficultyTable('facile');
   renderDifficultyTable('difficile');
+  updateAnswerSummaryHeaders();
   renderPlayerManager();
   updateResultRowStates();
 }
@@ -1404,11 +1488,11 @@ function renderPlayedToday() {
 }
 
 /* ===== Search Logic ===== */
-async function searchUser(username) {
+async function searchUser(username, season) {
   const results = { facile: [], difficile: [] };
   for (const diff of enabledDifficulties()) {
     try {
-      const list = await searchLeaderboard(activeSeason, diff, username);
+      const list = await searchLeaderboard(season, diff, username);
       if (Array.isArray(list)) results[diff] = list;
     } catch (err) {
       console.warn(`Search failed for ${username} / ${diff}:`, err);
@@ -1418,6 +1502,8 @@ async function searchUser(username) {
 }
 
 async function runSearch() {
+  const requestId = ++searchLoadId;
+  const season = activeSeason;
   const raw = els.input.value;
   const usernames = raw
     .split(/[\n,]+/)
@@ -1438,53 +1524,61 @@ async function runSearch() {
     for (let i = 0; i < usernames.length; i++) {
       const username = usernames[i];
       updateSpinnerProgress(`Recherche en cours… ${i + 1}/${usernames.length}`, i + 1, usernames.length);
-      const res = await searchUser(username);
+      const res = await searchUser(username, season);
       for (const diff of DIFFICULTIES) {
         allResults[diff].push(...res[diff]);
       }
     }
+    if (requestId !== searchLoadId || season !== activeSeason) return;
     renderResults(allResults);
     const total = allResults.facile.length + allResults.difficile.length;
     showToast(`${total} résultat(s) trouvé(s).`, 'success');
   } catch (err) {
     console.error(err);
-    showToast(`Erreur : ${err.message}`, 'error');
+    if (requestId === searchLoadId) showToast(`Erreur : ${err.message}`, 'error');
   } finally {
-    hideSpinner();
-    els.searchBtn.disabled = false;
+    if (requestId === searchLoadId) {
+      hideSpinner();
+      els.searchBtn.disabled = false;
+    }
   }
 }
 
 /* ===== Spinner ===== */
 function showSpinner(text = 'Chargement des scores…') {
   if (els.loadingOverlay) {
-    els.loadingOverlay.querySelector('p').textContent = text;
+    els.loadingOverlay.querySelector('#loading-message').textContent = text;
+    els.loadingOverlay.setAttribute('aria-busy', 'true');
     els.loadingOverlay.classList.remove('hidden');
   }
   if (els.progressBar) {
     els.progressBar.classList.remove('visible');
     els.progressFill.style.width = '0%';
+    els.progressBar.setAttribute('aria-valuenow', '0');
   }
 }
 
 function updateSpinnerProgress(text, current, total) {
   if (els.loadingOverlay) {
-    els.loadingOverlay.querySelector('p').textContent = text;
+    els.loadingOverlay.querySelector('#loading-message').textContent = text;
   }
   if (els.progressBar && els.progressFill && total > 1) {
     els.progressBar.classList.add('visible');
     const pct = Math.round((current / total) * 100);
     els.progressFill.style.width = pct + '%';
+    els.progressBar.setAttribute('aria-valuenow', String(pct));
   }
 }
 
 function hideSpinner() {
   if (els.loadingOverlay) {
     els.loadingOverlay.classList.add('hidden');
+    els.loadingOverlay.setAttribute('aria-busy', 'false');
   }
   if (els.progressBar) {
     els.progressBar.classList.remove('visible');
     els.progressFill.style.width = '0%';
+    els.progressBar.setAttribute('aria-valuenow', '0');
   }
 }
 
@@ -2007,6 +2101,7 @@ function renderCharts() {
 }
 
 async function loadCharts() {
+  const requestId = ++chartLoadId;
   const tracked = loadTracked();
   if (!activeSeason || tracked.length === 0) {
     chartData = null;
@@ -2017,7 +2112,9 @@ async function loadCharts() {
   }
 
   const season = activeSeason;
+  const league = activeLeague;
   const difficulty = chartDifficulty;
+  const isCurrent = () => requestId === chartLoadId && season === activeSeason && league === activeLeague && difficulty === chartDifficulty && chartsVisible;
 
   clearChartSvgs();
   els.chartsLoading.textContent = 'Chargement de l\'évolution…';
@@ -2026,17 +2123,18 @@ async function loadCharts() {
   els.chartsProgress.classList.add('visible');
   try {
     const data = await fetchSeasonDaySeries(season, difficulty, (done, total) => {
+      if (!isCurrent()) return;
       const pct = Math.round((done / total) * 100);
       els.chartsProgressFill.style.width = pct + '%';
       els.chartsLoading.textContent = `Chargement de l'évolution… ${done}/${total}`;
     });
-    if (season !== activeSeason || difficulty !== chartDifficulty) return;
+    if (!isCurrent()) return;
     chartData = data;
     renderCharts();
   } catch (err) {
     console.warn('Impossible de charger l\'évolution:', err);
   } finally {
-    if (season === activeSeason && difficulty === chartDifficulty) {
+    if (isCurrent()) {
       els.chartsLoading.classList.add('hidden');
       els.chartsProgress.classList.remove('visible');
     }
@@ -2044,11 +2142,13 @@ async function loadCharts() {
 }
 
 function invalidateCharts() {
+  chartLoadId++;
   chartData = null;
   if (chartsVisible) loadCharts();
 }
 
 function hideCharts() {
+  chartLoadId++;
   chartsVisible = false;
   clearChartSvgs();
   els.chartsSection.classList.add('hidden');
@@ -2057,6 +2157,7 @@ function hideCharts() {
 
 function toggleCharts() {
   if (chartsVisible) {
+    chartLoadId++;
     chartsVisible = false;
     els.chartsSection.classList.add('hidden');
     els.chartsToggleBtn.textContent = 'Afficher les graphiques d\'évolution';
@@ -2250,12 +2351,15 @@ function drawLineChart(svg, days, allSeries, getValues) {
   legend.className = 'chart-legend';
   const legendByKey = {};
   const addLegendItem = (name, key, color, avg) => {
-    const span = document.createElement('span');
-    span.className = 'legend-item' + (chartHidden.has(key) ? ' hidden-line' : '');
-    span.dataset.name = key;
-    span.innerHTML = `<span class="swatch${avg ? ' avg' : ''}"${avg ? '' : ` style="background:${color}"`}></span>${escapeHtml(name)}`;
-    legend.appendChild(span);
-    legendByKey[key] = span;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'legend-item' + (chartHidden.has(key) ? ' hidden-line' : '');
+    button.dataset.name = key;
+    button.setAttribute('aria-pressed', String(!chartHidden.has(key)));
+    button.setAttribute('aria-label', `${chartHidden.has(key) ? 'Afficher' : 'Masquer'} la courbe ${name}`);
+    button.innerHTML = `<span class="swatch${avg ? ' avg' : ''}"${avg ? '' : ` style="background:${color}"`}></span>${escapeHtml(name)}`;
+    legend.appendChild(button);
+    legendByKey[key] = button;
   };
   allPlottable.forEach(s => addLegendItem(s.name, s.name, s.color, false));
   addLegendItem('Moyenne', '__avg__', AVG_COLOR, true);
@@ -2265,6 +2369,8 @@ function drawLineChart(svg, days, allSeries, getValues) {
     const name = item.dataset.name;
     if (chartHidden.has(name)) chartHidden.delete(name);
     else chartHidden.add(name);
+    item.setAttribute('aria-pressed', String(!chartHidden.has(name)));
+    item.setAttribute('aria-label', `${chartHidden.has(name) ? 'Afficher' : 'Masquer'} la courbe ${item.textContent}`);
     renderCharts();
   });
   svg.insertAdjacentElement('afterend', legend);
@@ -2402,6 +2508,7 @@ function goToPrevSeason() {
   const sorted = [...allSeasons].sort((a, b) => a.number - b.number);
   const idx = sorted.findIndex(s => s.number === activeSeason);
   if (idx > 0) {
+    searchLoadId++;
     activeSeason = sorted[idx - 1].number;
     updateSeasonNav();
     renderAllTables();
@@ -2414,6 +2521,7 @@ function goToNextSeason() {
   const sorted = [...allSeasons].sort((a, b) => a.number - b.number);
   const idx = sorted.findIndex(s => s.number === activeSeason);
   if (idx < sorted.length - 1) {
+    searchLoadId++;
     activeSeason = sorted[idx + 1].number;
     updateSeasonNav();
     renderAllTables();
@@ -2542,7 +2650,7 @@ document.addEventListener('click', e => {
   const cta = e.target.closest('.empty-search-cta');
   if (!cta) return;
   els.input.focus();
-  els.input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  els.input.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
 });
 if (els.expertEnableBtn) els.expertEnableBtn.addEventListener('click', toggleExpert);
 if (els.expertDisableBtn) els.expertDisableBtn.addEventListener('click', toggleExpert);
@@ -2674,28 +2782,40 @@ Object.values(tables).forEach(t => {
   t.body.addEventListener('pointerup', cancelPress);
   t.body.addEventListener('pointercancel', cancelPress);
 
+  t.body.addEventListener('keydown', e => {
+    const cell = e.target.closest('.user-cell');
+    if (!cell || e.key !== 'Enter' || !e.altKey) return;
+    e.preventDefault();
+    const username = cell.dataset.username;
+    setHighlighted(getHighlighted() === username ? null : username);
+    renderAllTables();
+  });
+
   t.body.addEventListener('click', e => {
     if (suppressClick) {
       suppressClick = false;
       return;
     }
-    const scoreButton = e.target.closest('.day-score-btn');
-    if (scoreButton) {
-      const scores = scoreButton.dataset.period === 'today' ? todayScores : yesterdayScores;
-      const entry = scores && scores[scoreButton.dataset.difficulty] &&
-        scores[scoreButton.dataset.difficulty].get(scoreButton.dataset.username);
+    const dayCell = e.target.closest('.day-cell-btn');
+    if (dayCell) {
+      const scores = dayCell.dataset.period === 'today' ? todayScores : yesterdayScores;
+      const entry = scores && scores[dayCell.dataset.difficulty] &&
+        scores[dayCell.dataset.difficulty].get(dayCell.dataset.username);
       if (entry) {
         openAnswerMaskDialog(
-          scoreButton.dataset.username,
-          scoreButton.dataset.difficulty,
-          scoreButton.dataset.period,
+          dayCell.dataset.username,
+          dayCell.dataset.difficulty,
+          dayCell.dataset.period,
           entry
         );
       }
       return;
     }
     const cell = e.target.closest('.user-cell');
-    if (cell) cell.classList.toggle('expanded');
+    if (cell) {
+      const expanded = cell.classList.toggle('expanded');
+      cell.setAttribute('aria-expanded', String(expanded));
+    }
   });
 });
 
@@ -2705,6 +2825,13 @@ if (els.answerMaskDialog && els.answerMaskClose) {
     if (e.target === els.answerMaskDialog) els.answerMaskDialog.close();
   });
 }
+
+document.querySelectorAll('.day-summary-header').forEach(button => {
+  button.addEventListener('click', () => {
+    openAnswerSummaryDialog(button.dataset.difficulty, button.dataset.period);
+  });
+});
+
 
 /* ===== Start ===== */
 if ('serviceWorker' in navigator) {

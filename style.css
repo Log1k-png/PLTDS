@@ -737,6 +737,14 @@ tbody tr:hover {
 }
 
 .user-cell {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -759,6 +767,11 @@ tbody tr:hover {
 }
 .user-cell.pressing {
   opacity: 0.6;
+}
+.user-cell:focus-visible,
+.chart-legend .legend-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 tr.highlighted {
@@ -799,6 +812,32 @@ tr.highlighted .user-cell {
   color: #34d399;
   font-weight: 900;
 }
+.day-summary-header {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: normal;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.day-summary-header:hover:not(:disabled),
+.day-summary-header:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.day-summary-header:disabled {
+  color: var(--text-muted);
+  opacity: 1;
+  cursor: default;
+}
 
 .day-cell {
   display: inline-flex;
@@ -808,6 +847,27 @@ tr.highlighted .user-cell {
   gap: 0.1rem;
   min-height: 2.4rem;
   line-height: 1.1;
+}
+.day-cell-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.day-cell-btn:hover .today-score,
+.day-cell-btn:hover .day-score,
+.day-cell-btn:focus-visible .today-score,
+.day-cell-btn:focus-visible .day-score {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.day-cell-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 2px;
 }
 
 .day-score {
@@ -1123,13 +1183,19 @@ tr.highlighted .user-cell {
   font-weight: 700;
 }
 
-.chart-legend span {
+.chart-legend span,
+.chart-legend .legend-item {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
 }
 
 .chart-legend .legend-item {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
   transition: opacity 0.2s;
 }
@@ -1643,6 +1709,14 @@ textarea:focus {
   line-height: 1;
   white-space: nowrap;
 }
+.answer-summary-dialog .answer-mask-label,
+.answer-summary-dialog .answer-mask-score {
+  display: none;
+}
+.answer-summary-dialog .answer-mask-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.55rem;
+}
 .answer-mask-grid {
   display: grid;
   flex: 1;
@@ -1655,11 +1729,68 @@ textarea:focus {
   border: 1px solid var(--border);
   border-radius: 4px;
 }
+.answer-summary-square {
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: 2px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: conic-gradient(from -90deg, var(--primary) calc(var(--progress) * 1turn), var(--border-dim) 0);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 900;
+}
+.answer-summary-square::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 4px;
+  background: var(--surface-elevated);
+}
+.answer-summary-question {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  z-index: 1;
+}
+.answer-summary-percentage {
+  position: relative;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.answer-summary-percentage:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .answer-mask-square.mask-0 { background: #fff; border-color: #cbd5e1; }
 .answer-mask-square.mask-1 { background: #9ca3af; border-color: #9ca3af; }
 .answer-mask-square.mask-2 { background: #10b981; border-color: #10b981; }
 .answer-mask-square.mask-4 { background: #ef4444; border-color: #ef4444; }
 .answer-mask-square.mask-8 { background: #eda05b; border-color: #eda05b; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 .confirm-message {
   margin: 0;
   font-size: 0.95rem;

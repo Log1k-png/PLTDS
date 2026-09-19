@@ -12,7 +12,9 @@ export function createMockApi({ initialDay = 227 } = {}) {
   const day = initialDay;
 
   function historyFor(username, seasonNumber) {
-    const answerMask = [2, 4, 8, 1, 0, 2, 4, 8, 1, 0];
+    const answerMask = username === 'bob'
+      ? [2, 2, 4, 4, 8, 8, 1, 1, 0, 0]
+      : [2, 4, 8, 1, 0, 2, 4, 8, 1, 0];
     const days = {};
     for (let d = 220; d <= day; d++) {
       const score = BASE_SCORE[username] + d - 220;
@@ -38,9 +40,14 @@ export function createMockApi({ initialDay = 227 } = {}) {
       res.end(JSON.stringify(body));
     };
 
-    if (req.method === 'GET' && url.pathname === '/seasons') {
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/seasons') {
       const season = { seasonNumber: 9, name: 'Septembre 2026', dayStart: 220, dayEnd: 249 };
       send(200, { currentSeason: season, seasons: [season] });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/seasons/slow') {
+      setTimeout(() => send(200, { ok: true }), 10500);
       return;
     }
 

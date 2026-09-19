@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test:integration": "node test/integration.mjs"
+  },
   "devDependencies": {
     "wrangler": "^4.119.0"
   }

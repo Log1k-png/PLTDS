@@ -25,12 +25,13 @@ function freePort() {
   });
 }
 
-async function req(url) {
+async function req(url, method = 'GET') {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
     const res = await fetch(url, {
       cache: 'no-store',
+      method,
       signal: ctrl.signal,
     });
     return { status: res.status, headers: res.headers, text: await res.text() };
@@ -56,6 +57,14 @@ async function waitFor(url, timeoutMs = 45000) {
 }
 
 function taskkillTree(pid) {
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-pid, 'SIGTERM');
+    } catch {
+      // process already stopped
+    }
+    return Promise.resolve();
+  }
   return new Promise(resolve => execFile('taskkill', ['/pid', String(pid), '/t', '/f'], () => resolve()));
 }
 
@@ -67,20 +76,32 @@ try {
   const mockUrl = mock.url();
   const devPort = await freePort();
 
-  const cmdLine = `npx.cmd wrangler pages dev . --port ${devPort} --compatibility-date=${COMPAT_DATE} --binding API_BASE_URL=${mockUrl}`;
-  proc = spawn('cmd.exe', ['/d', '/s', '/c', cmdLine], {
+  const wranglerArgs = [
+    'wrangler', 'pages', 'dev', '.', '--port', String(devPort),
+    `--compatibility-date=${COMPAT_DATE}`, '--binding', `API_BASE_URL=${mockUrl}`,
+  ];
+  proc = process.platform === 'win32'
+    ? spawn('cmd.exe', ['/d', '/s', '/c', `npx.cmd ${wranglerArgs.join(' ')}`], {
+      cwd: ROOT,
+      env: { ...process.env, API_BASE_URL: mockUrl },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    : spawn('npx', wranglerArgs, {
     cwd: ROOT,
     env: { ...process.env, API_BASE_URL: mockUrl },
     stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
+    detached: true,
+    });
   let logs = '';
   proc.stdout.on('data', d => (logs += d));
   proc.stderr.on('data', d => (logs += d));
   await new Promise(resolve => setTimeout(resolve, 1500));
 
   const base = `http://127.0.0.1:${devPort}`;
-  check('dev server ready on /', await waitFor(`${base}/`), logs ? 'output captured' : 'no output');
+  const ready = await waitFor(`${base}/`);
+  check('dev server ready on /', ready, logs ? 'output captured' : 'no output');
+  if (!ready) throw new Error('Wrangler dev server did not start');
 
   // A) static allowlist.
   const rf = await req(`${base}/`);
@@ -108,6 +129,14 @@ try {
   check('D2 history preserves every answer-mask value', todayHistory.score > 0 && JSON.stringify(todayHistory.answerMask) === '[2,4,8,1,0,2,4,8,1,0]');
   const rBlockedProfile = await req(`${base}/api/public-profile/alice/stats/9`);
   check('D3 unrelated public profile path blocked', rBlockedProfile.status === 404);
+
+  // E) proxy only exposes safe read methods.
+  const rHead = await req(`${base}/api/seasons`, 'HEAD');
+  const rPost = await req(`${base}/api/seasons`, 'POST');
+  const rSlow = await req(`${base}/api/seasons/slow`);
+  check('E1 API HEAD proxied, no-store', rHead.status === 200 && noStore(rHead.headers) && rHead.text === '');
+  check('E2 API write methods blocked', rPost.status === 405 && rPost.headers.get('allow') === 'GET, HEAD');
+  check('E3 API upstream timeout is bounded', rSlow.status === 504 && noStore(rSlow.headers));
 
   if (logs) {
     const lines = logs.trim().split('\n').filter(l => /error|exception|failed/i.test(l));
