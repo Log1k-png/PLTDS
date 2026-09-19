@@ -38,10 +38,10 @@ const CHART_TITLES = {
     average: 'Nombre moyen de bonnes réponses',
   },
 };
-let chartCache = {}; // { 'season-difficulty': data } — persists until page refresh
+let profileHistories = {}; // { seasonNumber: { username: { dayNumber: { facile, difficile } } } }
+const profileHistoryLoads = new Map(); // Deduplicates concurrent profile requests per season/player.
 let chartsVisible = false;
 let chartHidden = new Set(); // player names (or '__avg__') toggled off via legend
-let forceRefreshAllPending = false; // when true, day-top fetches bypass the worker cache (?refresh=1)
 let refreshPending = false; // guards against concurrent refreshAll() runs
 let showExpert = false; // 'difficile' section enabled (persisted in localStorage)
 let flashName = null; // joueur fraichement ajoute : flash son chip dans le manager
@@ -315,46 +315,104 @@ async function fetchCurrentDay() {
   return data.currentDay;
 }
 
-async function fetchDayEntries(dayNumber, difficulty) {
-  const params = { limit: 0 };
+function profileHistoryForSeason(season) {
+  if (!profileHistories[season]) profileHistories[season] = Object.create(null);
+  return profileHistories[season];
+}
+
+function normalizeProfileHistoryEntry(entry) {
+  if (!entry || entry.completed !== true || !Number.isFinite(entry.score)) return null;
+  return {
+    score: entry.score,
+    correctCount: Array.isArray(entry.answerMask)
+      ? entry.answerMask.filter(answer => answer === 2).length
+      : null,
+  };
+}
+
+async function fetchPlayerHistory(username, season) {
+  const data = await apiGet(`/public-profile/${encodeURIComponent(username)}/season-progress/${season}`);
+  const history = Object.create(null);
+  Object.entries(data && data.days ? data.days : {}).forEach(([day, levels]) => {
+    const dayNumber = Number(day);
+    if (!Number.isInteger(dayNumber) || dayNumber < 1) return;
+    DIFFICULTIES.forEach(diff => {
+      const entry = normalizeProfileHistoryEntry(levels && levels[diff]);
+      if (!entry) return;
+      if (!history[dayNumber]) history[dayNumber] = Object.create(null);
+      history[dayNumber][diff] = entry;
+    });
+  });
+  return history;
+}
+
+function loadPlayerHistory(username, season) {
+  const seasonHistory = profileHistoryForSeason(season);
+  if (Object.prototype.hasOwnProperty.call(seasonHistory, username)) {
+    return Promise.resolve(seasonHistory[username]);
+  }
+
+  const key = `${season}\u0000${username}`;
+  if (!profileHistoryLoads.has(key)) {
+    const load = fetchPlayerHistory(username, season)
+      .catch(err => {
+        console.warn(`Failed to load history for ${username}/${season}:`, err);
+        return Object.create(null);
+      })
+      .then(history => {
+        profileHistoryForSeason(season)[username] = history;
+        return history;
+      })
+      .finally(() => profileHistoryLoads.delete(key));
+    profileHistoryLoads.set(key, load);
+  }
+  return profileHistoryLoads.get(key);
+}
+
+async function ensureProfileHistories(season, onProgress) {
   const tracked = loadTracked();
-  if (tracked.length > 0) params.users = tracked.join(',');
-  if (forceRefreshAllPending) params.refresh = '1';
-  const data = await apiGet(`/leaderboards/day/${dayNumber}/${difficulty}/top`, params);
-  return Array.isArray(data.entries) ? data.entries : [];
+  const seasonHistory = profileHistoryForSeason(season);
+  const pending = tracked.filter(username => !Object.prototype.hasOwnProperty.call(seasonHistory, username));
+  const total = tracked.length;
+  let done = total - pending.length;
+  if (onProgress && done > 0) onProgress(done, total);
+
+  async function worker() {
+    while (pending.length > 0) {
+      const username = pending.pop();
+      await loadPlayerHistory(username, season);
+      done++;
+      if (onProgress) onProgress(done, total);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker));
+  return profileHistoryForSeason(season);
 }
 
-async function loadDayScores(dayNumber) {
-  const result = { dayNumber };
-  await Promise.all(
-    enabledDifficulties().map(async diff => {
-      try {
-        const entries = await fetchDayEntries(dayNumber, diff);
-        result[diff] = new Map(entries.map(e => [e.username, e]));
-      } catch (err) {
-        console.warn(`Failed to load day ${dayNumber} ${diff}:`, err);
-      }
-    })
-  );
-  return result;
+function recentScoresFromProfiles(dayNumber) {
+  const scores = { dayNumber };
+  DIFFICULTIES.forEach(diff => { scores[diff] = new Map(); });
+  const seasonHistory = profileHistoryForSeason(currentSeason);
+  loadTracked().forEach(username => {
+    const day = seasonHistory[username] && seasonHistory[username][dayNumber];
+    DIFFICULTIES.forEach(diff => {
+      if (day && day[diff]) scores[diff].set(username, day[diff]);
+    });
+  });
+  return scores;
 }
 
-async function loadRecentScores(force = false) {
-  if (!currentDay) return;
-  if (!force && todayScores && todayScores.dayNumber === currentDay) return;
-
-  const [today, yesterday] = await Promise.all([
-    loadDayScores(currentDay),
-    loadDayScores(currentDay - 1),
-  ]);
-  todayScores = today;
-  yesterdayScores = yesterday;
+async function loadRecentScores() {
+  if (!currentDay || !currentSeason) return;
+  await ensureProfileHistories(currentSeason);
+  todayScores = recentScoresFromProfiles(currentDay);
+  yesterdayScores = recentScoresFromProfiles(currentDay - 1);
 }
 
 /* ===== Manual refresh ===== */
 async function refreshAll() {
   if (!refreshPending && els.refreshBtn) {
-    forceRefreshAllPending = true;
     refreshPending = true;
     els.refreshBtn.disabled = true;
     els.refreshBtn.classList.add('refreshing');
@@ -363,22 +421,22 @@ async function refreshAll() {
         liveScores[activeSeason] = {};
         await fetchAllTrackedScores(activeSeason);
       }
-      chartCache = {};
+      profileHistories = {};
+      profileHistoryLoads.clear();
       chartData = null;
       if (chartsVisible) {
         await fetchCurrentDay();
-        await loadRecentScores(true);
+        await loadRecentScores();
         renderAllTables();
         await loadCharts();
       } else {
         currentDay = await fetchCurrentDay();
-        await loadRecentScores(true);
+        await loadRecentScores();
       }
       renderAllTables();
     } catch (err) {
       console.warn('Impossible de rafraîchir:', err);
     } finally {
-      forceRefreshAllPending = false;
       refreshPending = false;
       els.refreshBtn.disabled = false;
       els.refreshBtn.classList.remove('refreshing');
@@ -652,7 +710,7 @@ function updateLeagueNameDisplay() {
 
 async function renderLeagueContent() {
   renderAllTables();
-  await loadRecentScores(true).catch(() => {});
+  await loadRecentScores().catch(() => {});
   if (activeSeason) {
     invalidateCharts();
     await fetchAllTrackedScores(activeSeason).then(() => renderAllTables()).catch(() => {});
@@ -837,7 +895,7 @@ async function addPlayer(entry, difficulty) {
     if (!liveScores[activeSeason]) liveScores[activeSeason] = {};
     const scores = await fetchPlayerScores(username, activeSeason);
     liveScores[activeSeason][username] = scores;
-    await loadRecentScores(true);
+    await loadRecentScores();
   } catch (err) {
     console.warn(`Refresh ${username} scores failed:`, err);
   } finally {
@@ -1216,7 +1274,7 @@ async function toggleExpert() {
     if (liveScores[activeSeason]) liveScores[activeSeason] = {};
     try {
       if (activeSeason) await fetchAllTrackedScores(activeSeason);
-      await loadRecentScores(true);
+      await loadRecentScores();
       renderAllTables();
       if (chartsVisible) loadCharts();
     } catch (err) {
@@ -1500,7 +1558,7 @@ async function autoLoadFromUrl() {
 
   saveTracked(tracked);
   try {
-    await loadRecentScores(true);
+    await loadRecentScores();
   } catch (err) {
     console.warn('Refresh today scores failed:', err);
   }
@@ -1843,48 +1901,27 @@ function chartValue(entry, metric) {
   return metric === 'score' ? entry.score : entry.correctCount;
 }
 
-function fetchSeasonDaySeries(season, difficulty, onProgress) {
+async function fetchSeasonDaySeries(season, difficulty, onProgress) {
   const info = allSeasons.find(s => s.number === season);
   const tracked = loadTracked();
-  if (!info || tracked.length === 0) return Promise.resolve(null);
-  if (season === currentSeason && !currentDay) return Promise.resolve(null);
+  if (!info || tracked.length === 0) return null;
+  if (season === currentSeason && !currentDay) return null;
 
   const lastDay = season === currentSeason ? currentDay : info.dayEnd;
-  if (!lastDay || lastDay < info.dayStart) return Promise.resolve(null);
+  if (!lastDay || lastDay < info.dayStart) return null;
 
   const days = [];
   for (let d = info.dayStart; d <= lastDay; d++) days.push(d);
-
-  let done = 0;
-  const total = days.length;
-
-  // Today and yesterday tops are already loaded on page load (todayScores /
-  // yesterdayScores). Reuse them on the current season instead of refetching.
-  const maps = {
-    [currentDay]: todayScores,
-    [currentDay - 1]: yesterdayScores,
-  };
-
-  return Promise.all(days.map(day => {
-    const reusable = (season === currentSeason && maps[day]) ? maps[day][difficulty] : null;
-    const promise = reusable
-      ? Promise.resolve([...reusable.values()])
-      : fetchDayEntries(day, difficulty).catch(() => []);
-    return promise.finally(() => {
-      done++;
-      if (onProgress) onProgress(done, total);
+  const histories = await ensureProfileHistories(season, onProgress);
+  const players = {};
+  tracked.forEach(username => {
+    players[username] = {};
+    days.forEach(day => {
+      const entry = histories[username] && histories[username][day] && histories[username][day][difficulty];
+      if (entry) players[username][day] = entry;
     });
-  })).then(results => {
-    const players = {};
-    tracked.forEach(u => players[u] = {});
-    results.forEach((entries, i) => {
-      const day = days[i];
-      entries.forEach(e => {
-        if (players[e.username] !== undefined) players[e.username][day] = e;
-      });
-    });
-    return { season, days, players };
   });
+  return { season, days, players };
 }
 
 function buildChartSeries(days, players, metric) {
@@ -1933,7 +1970,6 @@ function renderCharts() {
 async function loadCharts() {
   const tracked = loadTracked();
   if (!activeSeason || tracked.length === 0) {
-    chartCache = {};
     chartData = null;
     clearChartSvgs();
     els.chartsLoading.textContent = 'Ajoutez des joueurs pour voir les graphiques.';
@@ -1941,12 +1977,8 @@ async function loadCharts() {
     return;
   }
 
-  const key = `${activeSeason}-${chartDifficulty}`;
-  if (chartCache[key]) {
-    chartData = chartCache[key];
-    renderCharts();
-    return;
-  }
+  const season = activeSeason;
+  const difficulty = chartDifficulty;
 
   clearChartSvgs();
   els.chartsLoading.textContent = 'Chargement de l\'évolution…';
@@ -1954,25 +1986,26 @@ async function loadCharts() {
   els.chartsProgressFill.style.width = '0%';
   els.chartsProgress.classList.add('visible');
   try {
-    const data = await fetchSeasonDaySeries(activeSeason, chartDifficulty, (done, total) => {
+    const data = await fetchSeasonDaySeries(season, difficulty, (done, total) => {
       const pct = Math.round((done / total) * 100);
       els.chartsProgressFill.style.width = pct + '%';
       els.chartsLoading.textContent = `Chargement de l'évolution… ${done}/${total}`;
     });
-    chartCache[key] = data;
+    if (season !== activeSeason || difficulty !== chartDifficulty) return;
     chartData = data;
     renderCharts();
   } catch (err) {
     console.warn('Impossible de charger l\'évolution:', err);
   } finally {
-    els.chartsLoading.classList.add('hidden');
-    els.chartsProgress.classList.remove('visible');
+    if (season === activeSeason && difficulty === chartDifficulty) {
+      els.chartsLoading.classList.add('hidden');
+      els.chartsProgress.classList.remove('visible');
+    }
   }
 }
 
 function invalidateCharts() {
-  const key = `${activeSeason}-${chartDifficulty}`;
-  delete chartCache[key];
+  chartData = null;
   if (chartsVisible) loadCharts();
 }
 

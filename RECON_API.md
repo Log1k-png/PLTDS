@@ -22,6 +22,10 @@ There is **no** `dev.*` (or `dev-api*`, `dev-admin*`, `www2`, etc.) subdomain �
 - `GET /` → `{"status":"ok","uptime":...}`
 - `GET /seasons` → `{"seasons":[...]}` (each with `_id`, `seasonNumber`, `name`, `dayStart`, `dayEnd`, `__v`)
 - `GET /seasons/progress`
+- `GET /info` → current day, current season, first-day date
+- `GET /public-profile/:pseudo` → canonical public username
+- `GET /public-profile/:pseudo/season-progress[/:season]` → completed daily scores and answer masks for both difficulties
+- `GET /public-profile/:pseudo/stats/:season` → public aggregate player statistics
 - `GET /leaderboards/season/:n/:difficulty` (`facile` | `difficile`)
 - `GET /search?...`
 - `GET /day-top` (daily top)

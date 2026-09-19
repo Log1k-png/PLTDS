@@ -161,6 +161,15 @@ try {
   const rg = await req(`${base}/api/seasons/progress`);
   check('G1 progress proxied, no-store', rg.status === 200 && noStore(rg.headers));
 
+  // H) only the public player history route is proxied; it remains uncached.
+  const rh = await req(`${base}/api/public-profile/alice/season-progress/9`);
+  const history = parse(rh.text);
+  const todayHistory = history.days[String(history.currentDay)].facile;
+  check('H1 public player history proxied, no-store', rh.status === 200 && noStore(rh.headers));
+  check('H2 history preserves score and answer mask', todayHistory.score > 0 && todayHistory.answerMask.filter(v => v === 2).length === 8);
+  const rBlockedProfile = await req(`${base}/api/public-profile/alice/stats/9`);
+  check('H3 unrelated public profile path blocked', rBlockedProfile.status === 404);
+
   if (logs) {
     const lines = logs.trim().split('\n').filter(l => /error|exception|failed/i.test(l));
     if (lines.length) check('no worker errors in output', false, lines.join(' | ').slice(0, 300));

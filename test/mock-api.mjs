@@ -6,6 +6,7 @@ const BASE_SCORE = { alice: 200, bob: 150, carol: 300, dave: 175 };
  * Mock de l'API de La Table des Savoirs pour tests deterministes.
  * - /seasons/progress retourne un currentDay controlable.
  * - /leaderboards/day/:day/:diff/top retourne les joueurs ayant joue ce jour.
+ * - /public-profile/:pseudo/season-progress/:season retourne un historique joueur.
  * - POST /__control pilote l'etat (jour courant, rosters, bonus).
  * - GET /__log expose le journal des requetes upstream (pour prouver les
  *   hits/miss du cache du worker).
@@ -30,6 +31,25 @@ export function createMockApi({ initialDay = 227 } = {}) {
       rank: i + 1,
       correctTimeMs: i * 1000,
     }));
+  }
+
+  function historyFor(username, seasonNumber) {
+    const answerMask = [2, 2, 2, 2, 2, 2, 2, 2, 4, 8];
+    const days = {};
+    for (let d = 220; d <= day; d++) {
+      const score = BASE_SCORE[username] + d - 220;
+      days[d] = {
+        facile: { completed: true, score, answerMask },
+        difficile: { completed: true, score: score + 100, answerMask: new Array(10).fill(2) },
+      };
+    }
+    return {
+      username,
+      season: { seasonNumber, name: 'Septembre 2026', dayStart: 220, dayEnd: 249 },
+      firstDayDate: '2026-01-25T10:00:00.000Z',
+      currentDay: day,
+      days,
+    };
   }
 
   const server = http.createServer((req, res) => {
@@ -71,6 +91,17 @@ export function createMockApi({ initialDay = 227 } = {}) {
         currentDay: day,
         days: {},
       });
+      return;
+    }
+
+    const profile = url.pathname.match(/^\/public-profile\/([^/]+)\/season-progress\/(\d+)$/);
+    if (req.method === 'GET' && profile) {
+      const username = decodeURIComponent(profile[1]);
+      if (!Object.prototype.hasOwnProperty.call(BASE_SCORE, username)) {
+        send(404, { error: 'not found' });
+        return;
+      }
+      send(200, historyFor(username, Number(profile[2])));
       return;
     }
 

@@ -120,12 +120,15 @@ export default {
       // Recupere le chemin API sans le prefixe /api/
       const apiPath = url.pathname.slice(5); // enleve '/api/'
 
-      // Valide le chemin : non vide, pas de traverse, prefixes connus uniquement
+      // Valide le chemin : non vide, pas de traverse, prefixes connus uniquement.
+      // The profile history route is intentionally exact rather than exposing
+      // the complete public-profile API surface.
       const ALLOWED_PREFIXES = ['seasons', 'leaderboards'];
+      const isPublicProfileHistory = /^public-profile\/[^/]+\/season-progress\/\d+$/.test(apiPath);
       const isAllowed =
         apiPath &&
         !apiPath.includes('..') &&
-        ALLOWED_PREFIXES.some(p => apiPath === p || apiPath.startsWith(p + '/'));
+        (ALLOWED_PREFIXES.some(p => apiPath === p || apiPath.startsWith(p + '/')) || isPublicProfileHistory);
       if (!isAllowed) {
         return new Response('Not found', { status: 404 });
       }
