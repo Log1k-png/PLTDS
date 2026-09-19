@@ -98,6 +98,12 @@ const els = {
   chartCumulative: document.getElementById('chart-cumulative'),
   chartDaily: document.getElementById('chart-daily'),
   chartAverage: document.getElementById('chart-average'),
+  answerMaskDialog: document.getElementById('answer-mask-dialog'),
+  answerMaskTitle: document.getElementById('answer-mask-title'),
+  answerMaskSummary: document.getElementById('answer-mask-summary'),
+  answerMaskScore: document.getElementById('answer-mask-score'),
+  answerMaskGrid: document.getElementById('answer-mask-grid'),
+  answerMaskClose: document.getElementById('answer-mask-close'),
 };
 
 const tables = {
@@ -327,6 +333,7 @@ function normalizeProfileHistoryEntry(entry) {
     correctCount: Array.isArray(entry.answerMask)
       ? entry.answerMask.filter(answer => answer === 2).length
       : null,
+    answerMask: Array.isArray(entry.answerMask) ? entry.answerMask : null,
   };
 }
 
@@ -1074,14 +1081,46 @@ function getSortedTrackedForSeason(season) {
   };
 }
 
-function formatDayCell(entry, isToday, isLoading) {
+const ANSWER_MASK_META = {
+  0: { className: 'mask-0', label: 'blanche' },
+  1: { className: 'mask-1', label: 'grise' },
+  2: { className: 'mask-2', label: 'verte' },
+  4: { className: 'mask-4', label: 'rouge' },
+  8: { className: 'mask-8', label: 'orange' },
+};
+
+function openAnswerMaskDialog(username, difficulty, period, entry) {
+  if (!els.answerMaskDialog || !els.answerMaskGrid || !Array.isArray(entry.answerMask)) return;
+  const label = period === 'today' ? "Aujourd'hui" : 'Hier';
+  const level = DISPLAY_NAMES_SHORT[difficulty] || difficulty;
+  els.answerMaskTitle.textContent = `${username} - ${label}`;
+  els.answerMaskSummary.textContent = `Niveau ${level}`;
+  els.answerMaskScore.textContent = `${entry.score.toLocaleString('fr-FR')} pts`;
+  els.answerMaskGrid.replaceChildren();
+  for (let i = 0; i < 10; i++) {
+    const value = entry.answerMask[i] ?? 0;
+    const meta = ANSWER_MASK_META[value] || ANSWER_MASK_META[0];
+    const square = document.createElement('span');
+    square.className = `answer-mask-square ${meta.className}`;
+    square.setAttribute('role', 'listitem');
+    square.setAttribute('aria-label', `Réponse ${i + 1} : case ${meta.label}`);
+    els.answerMaskGrid.appendChild(square);
+  }
+  els.answerMaskDialog.showModal();
+}
+
+function formatDayCell(entry, isToday, isLoading, username, difficulty) {
   let scoreLine;
   let correctLine = '<span class="day-correct">&nbsp;</span>';
 
   if (isLoading) {
     scoreLine = '<span class="day-loading">…</span>';
   } else if (entry) {
-    scoreLine = `<span class="${isToday ? 'today-score' : 'day-score'}">${entry.score.toLocaleString('fr-FR')}</span>`;
+    const score = entry.score.toLocaleString('fr-FR');
+    const scoreClass = isToday ? 'today-score' : 'day-score';
+    scoreLine = Array.isArray(entry.answerMask)
+      ? `<button class="day-score-btn ${scoreClass}" type="button" data-period="${isToday ? 'today' : 'yesterday'}" data-username="${escapeHtml(username)}" data-difficulty="${difficulty}" aria-label="Voir les réponses de ${escapeHtml(username)} ${isToday ? "aujourd'hui" : 'hier'}, niveau ${difficulty}">${score}</button>`
+      : `<span class="${scoreClass}">${score}</span>`;
     if (entry.correctCount != null) {
       correctLine = `<span class="day-correct">${entry.correctCount}/10</span>`;
     }
@@ -1126,8 +1165,8 @@ function renderDifficultyTable(difficulty) {
     const todayEntry = todayMap && todayMap.get(p.username);
     const yesterdayEntry = yesterdayMap && yesterdayMap.get(p.username);
 
-    const todayCell = formatDayCell(todayEntry, true, !todayScores);
-    const yesterdayCell = formatDayCell(yesterdayEntry, false, !yesterdayScores);
+    const todayCell = formatDayCell(todayEntry, true, !todayScores, p.username, difficulty);
+    const yesterdayCell = formatDayCell(yesterdayEntry, false, !yesterdayScores, p.username, difficulty);
 
     const tr = document.createElement('tr');
     if (p.username === highlighted) tr.classList.add('highlighted');
@@ -1894,7 +1933,7 @@ function copyScoreboard(difficulty) {
 }
 
 /* ===== Charts (Abordable) ===== */
-const CHART_COLORS = ['#2addf3', '#ecca25', '#b48bff', '#34d399', '#f472b6', '#fb923c', '#60a5fa', '#f87171'];
+const CHART_COLORS = ['#2addf3', '#ecca25', '#b48bff', '#10b981', '#f472b6', '#fb923c', '#60a5fa', '#f87171'];
 
 function chartValue(entry, metric) {
   if (!entry) return null;
@@ -2640,10 +2679,32 @@ Object.values(tables).forEach(t => {
       suppressClick = false;
       return;
     }
+    const scoreButton = e.target.closest('.day-score-btn');
+    if (scoreButton) {
+      const scores = scoreButton.dataset.period === 'today' ? todayScores : yesterdayScores;
+      const entry = scores && scores[scoreButton.dataset.difficulty] &&
+        scores[scoreButton.dataset.difficulty].get(scoreButton.dataset.username);
+      if (entry) {
+        openAnswerMaskDialog(
+          scoreButton.dataset.username,
+          scoreButton.dataset.difficulty,
+          scoreButton.dataset.period,
+          entry
+        );
+      }
+      return;
+    }
     const cell = e.target.closest('.user-cell');
     if (cell) cell.classList.toggle('expanded');
   });
 });
+
+if (els.answerMaskDialog && els.answerMaskClose) {
+  els.answerMaskClose.addEventListener('click', () => els.answerMaskDialog.close());
+  els.answerMaskDialog.addEventListener('click', e => {
+    if (e.target === els.answerMaskDialog) els.answerMaskDialog.close();
+  });
+}
 
 /* ===== Start ===== */
 if ('serviceWorker' in navigator) {

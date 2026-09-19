@@ -12,7 +12,7 @@ export function createMockApi({ initialDay = 227 } = {}) {
   const day = initialDay;
 
   function historyFor(username, seasonNumber) {
-    const answerMask = [2, 2, 2, 2, 2, 2, 2, 2, 4, 8];
+    const answerMask = [2, 4, 8, 1, 0, 2, 4, 8, 1, 0];
     const days = {};
     for (let d = 220; d <= day; d++) {
       const score = BASE_SCORE[username] + d - 220;

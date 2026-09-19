@@ -105,7 +105,7 @@ try {
   const history = parse(rh.text);
   const todayHistory = history.days[String(history.currentDay)].facile;
   check('D1 public player history proxied, no-store', rh.status === 200 && noStore(rh.headers));
-  check('D2 history preserves score and answer mask', todayHistory.score > 0 && todayHistory.answerMask.filter(v => v === 2).length === 8);
+  check('D2 history preserves every answer-mask value', todayHistory.score > 0 && JSON.stringify(todayHistory.answerMask) === '[2,4,8,1,0,2,4,8,1,0]');
   const rBlockedProfile = await req(`${base}/api/public-profile/alice/stats/9`);
   check('D3 unrelated public profile path blocked', rBlockedProfile.status === 404);
 

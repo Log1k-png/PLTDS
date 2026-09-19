@@ -347,6 +347,25 @@
     </div>
   </dialog>
 
+  <dialog id="answer-mask-dialog" class="app-dialog answer-mask-dialog" aria-labelledby="answer-mask-title">
+    <div class="app-dialog-inner">
+      <div class="app-dialog-header">
+        <h2 id="answer-mask-title">Réponses</h2>
+      </div>
+      <div class="app-dialog-body">
+        <p id="answer-mask-summary" class="answer-mask-summary"></p>
+        <div class="answer-mask-score-row">
+          <span class="answer-mask-label">Score</span>
+          <div id="answer-mask-grid" class="answer-mask-grid" role="list" aria-label="Détail des réponses"></div>
+          <span id="answer-mask-score" class="answer-mask-score"></span>
+        </div>
+      </div>
+      <div class="app-dialog-footer">
+        <button id="answer-mask-close" class="btn primary" type="button">Fermer</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="confirm-dialog" class="app-dialog confirm-dialog" aria-labelledby="confirm-title">
     <div class="app-dialog-inner">
       <div class="app-dialog-header">
