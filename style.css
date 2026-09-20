@@ -854,6 +854,7 @@ tr.highlighted .user-cell {
   background: transparent;
   color: inherit;
   font: inherit;
+  line-height: 1.1;
   text-align: center;
   cursor: pointer;
 }
