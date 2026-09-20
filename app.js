@@ -38,14 +38,28 @@ const CHART_TITLES = {
     average: 'Nombre moyen de bonnes réponses',
   },
 };
-let chartCache = {}; // { 'season-difficulty': data } — persists until page refresh
+let profileHistories = {}; // { seasonNumber: { username: { dayNumber: { facile, difficile } } } }
+const profileHistoryLoads = new Map(); // Deduplicates concurrent profile requests per season/player.
+let profileHistoryController = new AbortController();
 let chartsVisible = false;
 let chartHidden = new Set(); // player names (or '__avg__') toggled off via legend
-let forceRefreshAllPending = false; // when true, day-top fetches bypass the worker cache (?refresh=1)
 let refreshPending = false; // guards against concurrent refreshAll() runs
 let showExpert = false; // 'difficile' section enabled (persisted in localStorage)
 let flashName = null; // joueur fraichement ajoute : flash son chip dans le manager
 const addingPlayers = new Set(); // ajouts en cours (evite les doubles fetches concurrents)
+let chartLoadId = 0;
+let searchLoadId = 0;
+let answerSummaryFormat = 'percentage';
+
+function resetProfileHistoryContext() {
+  profileHistoryController.abort();
+  profileHistoryController = new AbortController();
+}
+
+function setActiveSeason(season) {
+  if (activeSeason !== season) resetProfileHistoryContext();
+  activeSeason = season;
+}
 
 function loadShowExpert() {
   try {
@@ -58,6 +72,12 @@ showExpert = loadShowExpert();
 
 function enabledDifficulties() {
   return showExpert ? DIFFICULTIES : ['facile'];
+}
+
+function preferredScrollBehavior() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth';
 }
 
 /* ===== DOM Elements ===== */
@@ -98,6 +118,13 @@ const els = {
   chartCumulative: document.getElementById('chart-cumulative'),
   chartDaily: document.getElementById('chart-daily'),
   chartAverage: document.getElementById('chart-average'),
+  answerMaskDialog: document.getElementById('answer-mask-dialog'),
+  answerMaskTitle: document.getElementById('answer-mask-title'),
+  answerMaskSummary: document.getElementById('answer-mask-summary'),
+  answerMaskLabel: document.getElementById('answer-mask-label'),
+  answerMaskScore: document.getElementById('answer-mask-score'),
+  answerMaskGrid: document.getElementById('answer-mask-grid'),
+  answerMaskClose: document.getElementById('answer-mask-close'),
 };
 
 const tables = {
@@ -211,6 +238,7 @@ function setActiveLeague(name) {
   if (!state || !state.leagues || !state.leagues[name]) return false;
   state.activeLeague = name;
   writeState(state);
+  if (activeLeague !== name) resetProfileHistoryContext();
   activeLeague = name;
   return true;
 }
@@ -249,6 +277,7 @@ function removeLeague(name) {
   }
   if (state.activeLeague === name || !state.leagues[state.activeLeague]) {
     state.activeLeague = remaining[0];
+    if (activeLeague !== remaining[0]) resetProfileHistoryContext();
     activeLeague = remaining[0];
   }
   writeState(state);
@@ -258,10 +287,15 @@ function removeLeague(name) {
 normalizeState();
 
 /* ===== API Helpers ===== */
-async function apiGet(path, params = {}) {
+async function apiGet(path, params = {}, signal) {
   const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', abortFromCaller, { once: true });
+  }
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
@@ -271,6 +305,7 @@ async function apiGet(path, params = {}) {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', abortFromCaller);
     if (!resp.ok) {
       if (resp.status >= 500) {
         networkDown = true;
@@ -284,7 +319,9 @@ async function apiGet(path, params = {}) {
     return resp.json();
   } catch (err) {
     clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', abortFromCaller);
     if (err.name === 'AbortError') {
+      if (signal?.aborted) throw err;
       throw new Error('Le serveur met trop de temps à répondre.');
     }
     if (err.message && err.message.includes('Failed to fetch')) {
@@ -315,46 +352,113 @@ async function fetchCurrentDay() {
   return data.currentDay;
 }
 
-async function fetchDayEntries(dayNumber, difficulty) {
-  const params = { limit: 0 };
+function profileHistoryForSeason(season) {
+  if (!profileHistories[season]) profileHistories[season] = Object.create(null);
+  return profileHistories[season];
+}
+
+function normalizeProfileHistoryEntry(entry) {
+  if (!entry || entry.completed !== true || !Number.isFinite(entry.score)) return null;
+  return {
+    score: entry.score,
+    correctCount: Array.isArray(entry.answerMask)
+      ? entry.answerMask.filter(answer => answer === 2).length
+      : null,
+    answerMask: Array.isArray(entry.answerMask) ? entry.answerMask : null,
+  };
+}
+
+async function fetchPlayerHistory(username, season, signal) {
+  const data = await apiGet(`/public-profile/${encodeURIComponent(username)}/season-progress/${season}`, {}, signal);
+  const history = Object.create(null);
+  Object.entries(data && data.days ? data.days : {}).forEach(([day, levels]) => {
+    const dayNumber = Number(day);
+    if (!Number.isInteger(dayNumber) || dayNumber < 1) return;
+    DIFFICULTIES.forEach(diff => {
+      const entry = normalizeProfileHistoryEntry(levels && levels[diff]);
+      if (!entry) return;
+      if (!history[dayNumber]) history[dayNumber] = Object.create(null);
+      history[dayNumber][diff] = entry;
+    });
+  });
+  return history;
+}
+
+function loadPlayerHistory(username, season, signal = profileHistoryController.signal) {
+  const seasonHistory = profileHistoryForSeason(season);
+  if (Object.prototype.hasOwnProperty.call(seasonHistory, username)) {
+    return Promise.resolve(seasonHistory[username]);
+  }
+
+  if (signal.aborted) return Promise.reject(new DOMException('Profile history load was cancelled.', 'AbortError'));
+  const key = `${season}\u0000${username}`;
+  const existing = profileHistoryLoads.get(key);
+  if (!existing || existing.signal !== signal) {
+    const entry = { signal, promise: null };
+    entry.promise = fetchPlayerHistory(username, season, signal)
+      .then(history => {
+        if (!signal.aborted) profileHistoryForSeason(season)[username] = history;
+        return history;
+      })
+      .finally(() => {
+        if (profileHistoryLoads.get(key) === entry) profileHistoryLoads.delete(key);
+      });
+    profileHistoryLoads.set(key, entry);
+  }
+  return profileHistoryLoads.get(key).promise;
+}
+
+async function ensureProfileHistories(season, onProgress, signal = profileHistoryController.signal) {
   const tracked = loadTracked();
-  if (tracked.length > 0) params.users = tracked.join(',');
-  if (forceRefreshAllPending) params.refresh = '1';
-  const data = await apiGet(`/leaderboards/day/${dayNumber}/${difficulty}/top`, params);
-  return Array.isArray(data.entries) ? data.entries : [];
-}
+  const seasonHistory = profileHistoryForSeason(season);
+  const pending = tracked.filter(username => !Object.prototype.hasOwnProperty.call(seasonHistory, username));
+  const total = tracked.length;
+  let done = total - pending.length;
+  if (onProgress && done > 0) onProgress(done, total);
 
-async function loadDayScores(dayNumber) {
-  const result = { dayNumber };
-  await Promise.all(
-    enabledDifficulties().map(async diff => {
+  async function worker() {
+    while (pending.length > 0 && !signal.aborted) {
+      const username = pending.pop();
       try {
-        const entries = await fetchDayEntries(dayNumber, diff);
-        result[diff] = new Map(entries.map(e => [e.username, e]));
+        await loadPlayerHistory(username, season, signal);
       } catch (err) {
-        console.warn(`Failed to load day ${dayNumber} ${diff}:`, err);
+        if (signal.aborted || err.name === 'AbortError') return;
+        // Do not cache a failed request: the next load can retry this player.
+        console.warn(`Failed to load history for ${username}/${season}:`, err);
       }
-    })
-  );
-  return result;
+      if (signal.aborted) return;
+      done++;
+      if (onProgress) onProgress(done, total);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker));
+  return profileHistoryForSeason(season);
 }
 
-async function loadRecentScores(force = false) {
-  if (!currentDay) return;
-  if (!force && todayScores && todayScores.dayNumber === currentDay) return;
+function recentScoresFromProfiles(dayNumber) {
+  const scores = { dayNumber };
+  DIFFICULTIES.forEach(diff => { scores[diff] = new Map(); });
+  const seasonHistory = profileHistoryForSeason(currentSeason);
+  loadTracked().forEach(username => {
+    const day = seasonHistory[username] && seasonHistory[username][dayNumber];
+    DIFFICULTIES.forEach(diff => {
+      if (day && day[diff]) scores[diff].set(username, day[diff]);
+    });
+  });
+  return scores;
+}
 
-  const [today, yesterday] = await Promise.all([
-    loadDayScores(currentDay),
-    loadDayScores(currentDay - 1),
-  ]);
-  todayScores = today;
-  yesterdayScores = yesterday;
+async function loadRecentScores() {
+  if (!currentDay || !currentSeason) return;
+  await ensureProfileHistories(currentSeason);
+  todayScores = recentScoresFromProfiles(currentDay);
+  yesterdayScores = recentScoresFromProfiles(currentDay - 1);
 }
 
 /* ===== Manual refresh ===== */
 async function refreshAll() {
   if (!refreshPending && els.refreshBtn) {
-    forceRefreshAllPending = true;
     refreshPending = true;
     els.refreshBtn.disabled = true;
     els.refreshBtn.classList.add('refreshing');
@@ -363,22 +467,23 @@ async function refreshAll() {
         liveScores[activeSeason] = {};
         await fetchAllTrackedScores(activeSeason);
       }
-      chartCache = {};
+      resetProfileHistoryContext();
+      profileHistories = {};
+      profileHistoryLoads.clear();
       chartData = null;
       if (chartsVisible) {
         await fetchCurrentDay();
-        await loadRecentScores(true);
+        await loadRecentScores();
         renderAllTables();
         await loadCharts();
       } else {
         currentDay = await fetchCurrentDay();
-        await loadRecentScores(true);
+        await loadRecentScores();
       }
       renderAllTables();
     } catch (err) {
       console.warn('Impossible de rafraîchir:', err);
     } finally {
-      forceRefreshAllPending = false;
       refreshPending = false;
       els.refreshBtn.disabled = false;
       els.refreshBtn.classList.remove('refreshing');
@@ -652,9 +757,9 @@ function updateLeagueNameDisplay() {
 
 async function renderLeagueContent() {
   renderAllTables();
-  await loadRecentScores(true).catch(() => {});
+  invalidateCharts();
+  await loadRecentScores().catch(() => {});
   if (activeSeason) {
-    invalidateCharts();
     await fetchAllTrackedScores(activeSeason).then(() => renderAllTables()).catch(() => {});
   }
 }
@@ -662,6 +767,7 @@ async function renderLeagueContent() {
 async function switchLeague(name) {
   if (!name || name === activeLeague) return;
   if (!setActiveLeague(name)) return;
+  searchLoadId++;
   renderLeagueSelect();
   await renderLeagueContent();
 }
@@ -837,7 +943,7 @@ async function addPlayer(entry, difficulty) {
     if (!liveScores[activeSeason]) liveScores[activeSeason] = {};
     const scores = await fetchPlayerScores(username, activeSeason);
     liveScores[activeSeason][username] = scores;
-    await loadRecentScores(true);
+    await loadRecentScores();
   } catch (err) {
     console.warn(`Refresh ${username} scores failed:`, err);
   } finally {
@@ -918,10 +1024,59 @@ function initCreditsDialog() {
   });
 }
 
+function initHelpDialog() {
+  const dialog = document.getElementById('help-dialog');
+  const openBtn = document.getElementById('help-btn');
+  const closeBtn = document.getElementById('help-close-btn');
+  if (!dialog || !openBtn || !closeBtn) return;
+
+  openBtn.addEventListener('click', () => {
+    dialog.showModal();
+    closeBtn.focus();
+  });
+  closeBtn.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', e => {
+    if (e.target === dialog) dialog.close();
+  });
+}
+
+function initModalScrollLock() {
+  let locked = false;
+  let scrollY = 0;
+  const sync = () => {
+    const hasOpenDialog = document.querySelector('dialog[open]') !== null;
+    if (hasOpenDialog && !locked) {
+      locked = true;
+      scrollY = window.scrollY;
+      document.body.classList.add('modal-scroll-locked');
+      document.body.style.top = `-${scrollY}px`;
+      return;
+    }
+    if (!hasOpenDialog && locked) {
+      locked = false;
+      document.body.classList.remove('modal-scroll-locked');
+      document.body.style.top = '';
+      window.scrollTo(0, scrollY);
+    }
+  };
+
+  const observer = new MutationObserver(sync);
+  document.querySelectorAll('dialog').forEach(dialog => {
+    observer.observe(dialog, { attributes: true, attributeFilter: ['open'] });
+  });
+  sync();
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initCreditsDialog);
+  document.addEventListener('DOMContentLoaded', () => {
+    initCreditsDialog();
+    initHelpDialog();
+    initModalScrollLock();
+  });
 } else {
   initCreditsDialog();
+  initHelpDialog();
+  initModalScrollLock();
 }
 
 function createResultRow(entry, difficulty) {
@@ -1016,22 +1171,126 @@ function getSortedTrackedForSeason(season) {
   };
 }
 
-function formatDayCell(entry, isToday, isLoading) {
+const ANSWER_MASK_META = {
+  0: { className: 'mask-0', label: 'blanche' },
+  1: { className: 'mask-1', label: 'grise' },
+  2: { className: 'mask-2', label: 'verte' },
+  4: { className: 'mask-4', label: 'rouge' },
+  8: { className: 'mask-8', label: 'orange' },
+};
+
+function openAnswerMaskDialog(username, difficulty, period, entry) {
+  if (!els.answerMaskDialog || !els.answerMaskGrid || !Array.isArray(entry.answerMask)) return;
+  els.answerMaskDialog.classList.remove('answer-summary-dialog');
+  const label = period === 'today' ? "Aujourd'hui" : 'Hier';
+  const level = DISPLAY_NAMES_SHORT[difficulty] || difficulty;
+  els.answerMaskTitle.textContent = `${username} - ${label}`;
+  els.answerMaskSummary.textContent = `Niveau ${level}`;
+  els.answerMaskLabel.textContent = 'Score';
+  els.answerMaskScore.textContent = `${entry.score.toLocaleString('fr-FR')} pts`;
+  els.answerMaskGrid.replaceChildren();
+  for (let i = 0; i < 10; i++) {
+    const value = entry.answerMask[i] ?? 0;
+    const meta = ANSWER_MASK_META[value] || ANSWER_MASK_META[0];
+    const square = document.createElement('span');
+    square.className = `answer-mask-square ${meta.className}`;
+    square.setAttribute('role', 'listitem');
+    square.setAttribute('aria-label', `Réponse ${i + 1} : case ${meta.label}`);
+    els.answerMaskGrid.appendChild(square);
+  }
+  els.answerMaskDialog.showModal();
+}
+
+function answerSummaryForDay(difficulty, period) {
+  const scores = period === 'today' ? todayScores : yesterdayScores;
+  const entries = scores && scores[difficulty]
+    ? [...scores[difficulty].values()].filter(entry => Array.isArray(entry.answerMask) && entry.answerMask.length >= 10)
+    : [];
+  return {
+    participants: entries.length,
+    correct: Array.from({ length: 10 }, (_, index) =>
+      entries.filter(entry => entry.answerMask[index] === 2).length
+    ),
+  };
+}
+
+function openAnswerSummaryDialog(difficulty, period) {
+  if (!els.answerMaskDialog || !els.answerMaskGrid) return;
+  const summary = answerSummaryForDay(difficulty, period);
+  if (summary.participants === 0) return;
+  const label = period === 'today' ? "Aujourd'hui" : 'Hier';
+  const level = DISPLAY_NAMES_SHORT[difficulty] || difficulty;
+  els.answerMaskDialog.classList.add('answer-summary-dialog');
+  els.answerMaskTitle.textContent = `Réponses - ${label}`;
+  els.answerMaskSummary.textContent = `Niveau ${level} - ${summary.participants} joueur${summary.participants > 1 ? 's' : ''}`;
+  els.answerMaskLabel.textContent = '';
+  els.answerMaskScore.textContent = '';
+  els.answerMaskGrid.replaceChildren();
+  summary.correct.forEach((count, index) => {
+    const ratio = count / summary.participants;
+    const square = document.createElement('span');
+    square.className = 'answer-mask-square answer-summary-square';
+    square.style.setProperty('--progress', ratio);
+    const question = document.createElement('span');
+    question.className = 'answer-summary-question';
+    question.textContent = index + 1;
+    const percentage = document.createElement('button');
+    percentage.type = 'button';
+    percentage.className = 'answer-summary-percentage';
+    percentage.textContent = answerSummaryFormat === 'fraction'
+      ? `${count}/${summary.participants}`
+      : `${Math.round(ratio * 100)}%`;
+    percentage.setAttribute('aria-label', `Question ${index + 1} : basculer vers ${answerSummaryFormat === 'fraction' ? 'le pourcentage' : 'la fraction'}`);
+    percentage.addEventListener('click', () => {
+      answerSummaryFormat = answerSummaryFormat === 'fraction' ? 'percentage' : 'fraction';
+      openAnswerSummaryDialog(difficulty, period);
+    });
+    square.append(question, percentage);
+    square.setAttribute('role', 'listitem');
+    square.setAttribute('aria-label', `Question ${index + 1} : ${count} réponse${count > 1 ? 's' : ''} correcte${count > 1 ? 's' : ''} sur ${summary.participants}`);
+    els.answerMaskGrid.appendChild(square);
+  });
+  if (!els.answerMaskDialog.open) els.answerMaskDialog.showModal();
+}
+
+function updateAnswerSummaryHeaders() {
+  document.querySelectorAll('.day-summary-header').forEach(button => {
+    const summary = answerSummaryForDay(button.dataset.difficulty, button.dataset.period);
+    const available = activeSeason === currentSeason && summary.participants > 0;
+    button.disabled = !available;
+    button.setAttribute('aria-label', available
+      ? `Voir le détail des réponses ${button.textContent}, niveau ${DISPLAY_NAMES_SHORT[button.dataset.difficulty] || button.dataset.difficulty}`
+      : `Détail des réponses ${button.textContent} indisponible`);
+  });
+}
+
+function formatDayCell(entry, isToday, isLoading, username, difficulty) {
   let scoreLine;
   let correctLine = '<span class="day-correct">&nbsp;</span>';
+  let action = null;
 
   if (isLoading) {
     scoreLine = '<span class="day-loading">…</span>';
   } else if (entry) {
-    scoreLine = `<span class="${isToday ? 'today-score' : 'day-score'}">${entry.score.toLocaleString('fr-FR')}</span>`;
+    const score = entry.score.toLocaleString('fr-FR');
+    const scoreClass = isToday ? 'today-score' : 'day-score';
+    action = Array.isArray(entry.answerMask)
+      ? ` data-period="${isToday ? 'today' : 'yesterday'}" data-username="${escapeHtml(username)}" data-difficulty="${difficulty}" aria-label="Voir les réponses de ${escapeHtml(username)} ${isToday ? "aujourd'hui" : 'hier'}, niveau ${difficulty}"`
+      : null;
+    scoreLine = Array.isArray(entry.answerMask)
+      ? `<span class="${scoreClass}">${score}</span>`
+      : `<span class="${scoreClass}">${score}</span>`;
     if (entry.correctCount != null) {
-      correctLine = `<span class="day-correct">${entry.correctCount}/10</span>`;
+      const perfectClass = entry.correctCount === 10 ? ' day-perfect' : '';
+      correctLine = `<span class="day-correct${perfectClass}">${entry.correctCount}/10</span>`;
     }
   } else {
     scoreLine = '<span class="day-score">—</span>';
   }
 
-  return `<span class="day-cell">${scoreLine}${correctLine}</span>`;
+  return action
+    ? `<button class="day-cell day-cell-btn" type="button"${action}>${scoreLine}${correctLine}</button>`
+    : `<span class="day-cell">${scoreLine}${correctLine}</span>`;
 }
 
 function renderDifficultyTable(difficulty) {
@@ -1068,8 +1327,8 @@ function renderDifficultyTable(difficulty) {
     const todayEntry = todayMap && todayMap.get(p.username);
     const yesterdayEntry = yesterdayMap && yesterdayMap.get(p.username);
 
-    const todayCell = formatDayCell(todayEntry, true, !todayScores);
-    const yesterdayCell = formatDayCell(yesterdayEntry, false, !yesterdayScores);
+    const todayCell = formatDayCell(todayEntry, true, !todayScores, p.username, difficulty);
+    const yesterdayCell = formatDayCell(yesterdayEntry, false, !yesterdayScores, p.username, difficulty);
 
     const tr = document.createElement('tr');
     if (p.username === highlighted) tr.classList.add('highlighted');
@@ -1077,7 +1336,7 @@ function renderDifficultyTable(difficulty) {
 
     tr.innerHTML = `
       <td class="rank-cell">${pos}</td>
-      <td class="user-cell" data-username="${escapeHtml(p.username)}" title="${escapeHtml(p.username)}">${escapeHtml(p.username)}</td>
+      <td><button class="user-cell" type="button" data-username="${escapeHtml(p.username)}" title="${escapeHtml(p.username)}" aria-expanded="false" aria-keyshortcuts="Alt+Enter" aria-label="${escapeHtml(p.username)}. Alt+Entrée pour marquer comme votre joueur.">${escapeHtml(p.username)}</button></td>
       <td class="score-cell"><a class="score-profile-link" href="${playerProfileUrl(p.username)}" target="_blank" rel="noopener noreferrer" aria-label="Profil de ${escapeHtml(p.username)}" title="Profil de ${escapeHtml(p.username)}">${scoreRaw}</a></td>
       <td class="today-cell">${todayCell}</td>
       <td class="yesterday-cell">${yesterdayCell}</td>
@@ -1143,7 +1402,7 @@ function scrollPlayerListTo(username) {
   let target = null;
   if (top < list.scrollTop) target = top;
   else if (bottom > list.scrollTop + list.clientHeight) target = bottom - list.clientHeight;
-  if (target !== null) list.scrollTo({ top: target, behavior: 'smooth' });
+  if (target !== null) list.scrollTo({ top: target, behavior: preferredScrollBehavior() });
 }
 
 function updateResultRowStates() {
@@ -1170,6 +1429,7 @@ function renderAllTables() {
   renderPlayedToday();
   renderDifficultyTable('facile');
   renderDifficultyTable('difficile');
+  updateAnswerSummaryHeaders();
   renderPlayerManager();
   updateResultRowStates();
 }
@@ -1216,7 +1476,7 @@ async function toggleExpert() {
     if (liveScores[activeSeason]) liveScores[activeSeason] = {};
     try {
       if (activeSeason) await fetchAllTrackedScores(activeSeason);
-      await loadRecentScores(true);
+      await loadRecentScores();
       renderAllTables();
       if (chartsVisible) loadCharts();
     } catch (err) {
@@ -1307,11 +1567,11 @@ function renderPlayedToday() {
 }
 
 /* ===== Search Logic ===== */
-async function searchUser(username) {
+async function searchUser(username, season) {
   const results = { facile: [], difficile: [] };
   for (const diff of enabledDifficulties()) {
     try {
-      const list = await searchLeaderboard(activeSeason, diff, username);
+      const list = await searchLeaderboard(season, diff, username);
       if (Array.isArray(list)) results[diff] = list;
     } catch (err) {
       console.warn(`Search failed for ${username} / ${diff}:`, err);
@@ -1321,6 +1581,8 @@ async function searchUser(username) {
 }
 
 async function runSearch() {
+  const requestId = ++searchLoadId;
+  const season = activeSeason;
   const raw = els.input.value;
   const usernames = raw
     .split(/[\n,]+/)
@@ -1341,53 +1603,61 @@ async function runSearch() {
     for (let i = 0; i < usernames.length; i++) {
       const username = usernames[i];
       updateSpinnerProgress(`Recherche en cours… ${i + 1}/${usernames.length}`, i + 1, usernames.length);
-      const res = await searchUser(username);
+      const res = await searchUser(username, season);
       for (const diff of DIFFICULTIES) {
         allResults[diff].push(...res[diff]);
       }
     }
+    if (requestId !== searchLoadId || season !== activeSeason) return;
     renderResults(allResults);
     const total = allResults.facile.length + allResults.difficile.length;
     showToast(`${total} résultat(s) trouvé(s).`, 'success');
   } catch (err) {
     console.error(err);
-    showToast(`Erreur : ${err.message}`, 'error');
+    if (requestId === searchLoadId) showToast(`Erreur : ${err.message}`, 'error');
   } finally {
-    hideSpinner();
-    els.searchBtn.disabled = false;
+    if (requestId === searchLoadId) {
+      hideSpinner();
+      els.searchBtn.disabled = false;
+    }
   }
 }
 
 /* ===== Spinner ===== */
 function showSpinner(text = 'Chargement des scores…') {
   if (els.loadingOverlay) {
-    els.loadingOverlay.querySelector('p').textContent = text;
+    els.loadingOverlay.querySelector('#loading-message').textContent = text;
+    els.loadingOverlay.setAttribute('aria-busy', 'true');
     els.loadingOverlay.classList.remove('hidden');
   }
   if (els.progressBar) {
     els.progressBar.classList.remove('visible');
     els.progressFill.style.width = '0%';
+    els.progressBar.setAttribute('aria-valuenow', '0');
   }
 }
 
 function updateSpinnerProgress(text, current, total) {
   if (els.loadingOverlay) {
-    els.loadingOverlay.querySelector('p').textContent = text;
+    els.loadingOverlay.querySelector('#loading-message').textContent = text;
   }
   if (els.progressBar && els.progressFill && total > 1) {
     els.progressBar.classList.add('visible');
     const pct = Math.round((current / total) * 100);
     els.progressFill.style.width = pct + '%';
+    els.progressBar.setAttribute('aria-valuenow', String(pct));
   }
 }
 
 function hideSpinner() {
   if (els.loadingOverlay) {
     els.loadingOverlay.classList.add('hidden');
+    els.loadingOverlay.setAttribute('aria-busy', 'false');
   }
   if (els.progressBar) {
     els.progressBar.classList.remove('visible');
     els.progressFill.style.width = '0%';
+    els.progressBar.setAttribute('aria-valuenow', '0');
   }
 }
 
@@ -1420,7 +1690,7 @@ async function autoLoadFromUrl() {
   if (usernames.length === 0) return;
 
   if (seasonParam && allSeasons.some(s => s.number === seasonParam)) {
-    activeSeason = seasonParam;
+    setActiveSeason(seasonParam);
   }
 
   const incoming = usernames.filter((u, i) => usernames.indexOf(u) === i).sort();
@@ -1500,7 +1770,7 @@ async function autoLoadFromUrl() {
 
   saveTracked(tracked);
   try {
-    await loadRecentScores(true);
+    await loadRecentScores();
   } catch (err) {
     console.warn('Refresh today scores failed:', err);
   }
@@ -1836,55 +2106,34 @@ function copyScoreboard(difficulty) {
 }
 
 /* ===== Charts (Abordable) ===== */
-const CHART_COLORS = ['#2addf3', '#ecca25', '#b48bff', '#34d399', '#f472b6', '#fb923c', '#60a5fa', '#f87171'];
+const CHART_COLORS = ['#2addf3', '#ecca25', '#b48bff', '#10b981', '#f472b6', '#fb923c', '#60a5fa', '#f87171'];
 
 function chartValue(entry, metric) {
   if (!entry) return null;
   return metric === 'score' ? entry.score : entry.correctCount;
 }
 
-function fetchSeasonDaySeries(season, difficulty, onProgress) {
+async function fetchSeasonDaySeries(season, difficulty, onProgress) {
   const info = allSeasons.find(s => s.number === season);
   const tracked = loadTracked();
-  if (!info || tracked.length === 0) return Promise.resolve(null);
-  if (season === currentSeason && !currentDay) return Promise.resolve(null);
+  if (!info || tracked.length === 0) return null;
+  if (season === currentSeason && !currentDay) return null;
 
   const lastDay = season === currentSeason ? currentDay : info.dayEnd;
-  if (!lastDay || lastDay < info.dayStart) return Promise.resolve(null);
+  if (!lastDay || lastDay < info.dayStart) return null;
 
   const days = [];
   for (let d = info.dayStart; d <= lastDay; d++) days.push(d);
-
-  let done = 0;
-  const total = days.length;
-
-  // Today and yesterday tops are already loaded on page load (todayScores /
-  // yesterdayScores). Reuse them on the current season instead of refetching.
-  const maps = {
-    [currentDay]: todayScores,
-    [currentDay - 1]: yesterdayScores,
-  };
-
-  return Promise.all(days.map(day => {
-    const reusable = (season === currentSeason && maps[day]) ? maps[day][difficulty] : null;
-    const promise = reusable
-      ? Promise.resolve([...reusable.values()])
-      : fetchDayEntries(day, difficulty).catch(() => []);
-    return promise.finally(() => {
-      done++;
-      if (onProgress) onProgress(done, total);
+  const histories = await ensureProfileHistories(season, onProgress);
+  const players = {};
+  tracked.forEach(username => {
+    players[username] = {};
+    days.forEach(day => {
+      const entry = histories[username] && histories[username][day] && histories[username][day][difficulty];
+      if (entry) players[username][day] = entry;
     });
-  })).then(results => {
-    const players = {};
-    tracked.forEach(u => players[u] = {});
-    results.forEach((entries, i) => {
-      const day = days[i];
-      entries.forEach(e => {
-        if (players[e.username] !== undefined) players[e.username][day] = e;
-      });
-    });
-    return { season, days, players };
   });
+  return { season, days, players };
 }
 
 function buildChartSeries(days, players, metric) {
@@ -1931,9 +2180,9 @@ function renderCharts() {
 }
 
 async function loadCharts() {
+  const requestId = ++chartLoadId;
   const tracked = loadTracked();
   if (!activeSeason || tracked.length === 0) {
-    chartCache = {};
     chartData = null;
     clearChartSvgs();
     els.chartsLoading.textContent = 'Ajoutez des joueurs pour voir les graphiques.';
@@ -1941,12 +2190,10 @@ async function loadCharts() {
     return;
   }
 
-  const key = `${activeSeason}-${chartDifficulty}`;
-  if (chartCache[key]) {
-    chartData = chartCache[key];
-    renderCharts();
-    return;
-  }
+  const season = activeSeason;
+  const league = activeLeague;
+  const difficulty = chartDifficulty;
+  const isCurrent = () => requestId === chartLoadId && season === activeSeason && league === activeLeague && difficulty === chartDifficulty && chartsVisible;
 
   clearChartSvgs();
   els.chartsLoading.textContent = 'Chargement de l\'évolution…';
@@ -1954,29 +2201,33 @@ async function loadCharts() {
   els.chartsProgressFill.style.width = '0%';
   els.chartsProgress.classList.add('visible');
   try {
-    const data = await fetchSeasonDaySeries(activeSeason, chartDifficulty, (done, total) => {
+    const data = await fetchSeasonDaySeries(season, difficulty, (done, total) => {
+      if (!isCurrent()) return;
       const pct = Math.round((done / total) * 100);
       els.chartsProgressFill.style.width = pct + '%';
       els.chartsLoading.textContent = `Chargement de l'évolution… ${done}/${total}`;
     });
-    chartCache[key] = data;
+    if (!isCurrent()) return;
     chartData = data;
     renderCharts();
   } catch (err) {
     console.warn('Impossible de charger l\'évolution:', err);
   } finally {
-    els.chartsLoading.classList.add('hidden');
-    els.chartsProgress.classList.remove('visible');
+    if (isCurrent()) {
+      els.chartsLoading.classList.add('hidden');
+      els.chartsProgress.classList.remove('visible');
+    }
   }
 }
 
 function invalidateCharts() {
-  const key = `${activeSeason}-${chartDifficulty}`;
-  delete chartCache[key];
+  chartLoadId++;
+  chartData = null;
   if (chartsVisible) loadCharts();
 }
 
 function hideCharts() {
+  chartLoadId++;
   chartsVisible = false;
   clearChartSvgs();
   els.chartsSection.classList.add('hidden');
@@ -1985,6 +2236,7 @@ function hideCharts() {
 
 function toggleCharts() {
   if (chartsVisible) {
+    chartLoadId++;
     chartsVisible = false;
     els.chartsSection.classList.add('hidden');
     els.chartsToggleBtn.textContent = 'Afficher les graphiques d\'évolution';
@@ -2178,12 +2430,15 @@ function drawLineChart(svg, days, allSeries, getValues) {
   legend.className = 'chart-legend';
   const legendByKey = {};
   const addLegendItem = (name, key, color, avg) => {
-    const span = document.createElement('span');
-    span.className = 'legend-item' + (chartHidden.has(key) ? ' hidden-line' : '');
-    span.dataset.name = key;
-    span.innerHTML = `<span class="swatch${avg ? ' avg' : ''}"${avg ? '' : ` style="background:${color}"`}></span>${escapeHtml(name)}`;
-    legend.appendChild(span);
-    legendByKey[key] = span;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'legend-item' + (chartHidden.has(key) ? ' hidden-line' : '');
+    button.dataset.name = key;
+    button.setAttribute('aria-pressed', String(!chartHidden.has(key)));
+    button.setAttribute('aria-label', `${chartHidden.has(key) ? 'Afficher' : 'Masquer'} la courbe ${name}`);
+    button.innerHTML = `<span class="swatch${avg ? ' avg' : ''}"${avg ? '' : ` style="background:${color}"`}></span>${escapeHtml(name)}`;
+    legend.appendChild(button);
+    legendByKey[key] = button;
   };
   allPlottable.forEach(s => addLegendItem(s.name, s.name, s.color, false));
   addLegendItem('Moyenne', '__avg__', AVG_COLOR, true);
@@ -2193,6 +2448,8 @@ function drawLineChart(svg, days, allSeries, getValues) {
     const name = item.dataset.name;
     if (chartHidden.has(name)) chartHidden.delete(name);
     else chartHidden.add(name);
+    item.setAttribute('aria-pressed', String(!chartHidden.has(name)));
+    item.setAttribute('aria-label', `${chartHidden.has(name) ? 'Afficher' : 'Masquer'} la courbe ${item.textContent}`);
     renderCharts();
   });
   svg.insertAdjacentElement('afterend', legend);
@@ -2330,7 +2587,8 @@ function goToPrevSeason() {
   const sorted = [...allSeasons].sort((a, b) => a.number - b.number);
   const idx = sorted.findIndex(s => s.number === activeSeason);
   if (idx > 0) {
-    activeSeason = sorted[idx - 1].number;
+    searchLoadId++;
+    setActiveSeason(sorted[idx - 1].number);
     updateSeasonNav();
     renderAllTables();
     fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
@@ -2342,7 +2600,8 @@ function goToNextSeason() {
   const sorted = [...allSeasons].sort((a, b) => a.number - b.number);
   const idx = sorted.findIndex(s => s.number === activeSeason);
   if (idx < sorted.length - 1) {
-    activeSeason = sorted[idx + 1].number;
+    searchLoadId++;
+    setActiveSeason(sorted[idx + 1].number);
     updateSeasonNav();
     renderAllTables();
     fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
@@ -2418,9 +2677,9 @@ async function init() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlSeason = parseInt(urlParams.get('season'), 10);
     if (urlSeason && allSeasons.some(s => s.number === urlSeason)) {
-      activeSeason = urlSeason;
+      setActiveSeason(urlSeason);
     } else {
-      activeSeason = currentSeason;
+      setActiveSeason(currentSeason);
     }
 
     updateSeasonNav();
@@ -2430,7 +2689,7 @@ async function init() {
     els.seasonDisplay.textContent = 'Saison inconnue';
     els.seasonPrev.disabled = true;
     els.seasonNext.disabled = true;
-    activeSeason = null;
+    setActiveSeason(null);
     if (networkDown) {
       els.networkError.classList.remove('hidden');
     }
@@ -2470,7 +2729,7 @@ document.addEventListener('click', e => {
   const cta = e.target.closest('.empty-search-cta');
   if (!cta) return;
   els.input.focus();
-  els.input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  els.input.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
 });
 if (els.expertEnableBtn) els.expertEnableBtn.addEventListener('click', toggleExpert);
 if (els.expertDisableBtn) els.expertDisableBtn.addEventListener('click', toggleExpert);
@@ -2602,15 +2861,56 @@ Object.values(tables).forEach(t => {
   t.body.addEventListener('pointerup', cancelPress);
   t.body.addEventListener('pointercancel', cancelPress);
 
+  t.body.addEventListener('keydown', e => {
+    const cell = e.target.closest('.user-cell');
+    if (!cell || e.key !== 'Enter' || !e.altKey) return;
+    e.preventDefault();
+    const username = cell.dataset.username;
+    setHighlighted(getHighlighted() === username ? null : username);
+    renderAllTables();
+  });
+
   t.body.addEventListener('click', e => {
     if (suppressClick) {
       suppressClick = false;
       return;
     }
+    const dayCell = e.target.closest('.day-cell-btn');
+    if (dayCell) {
+      const scores = dayCell.dataset.period === 'today' ? todayScores : yesterdayScores;
+      const entry = scores && scores[dayCell.dataset.difficulty] &&
+        scores[dayCell.dataset.difficulty].get(dayCell.dataset.username);
+      if (entry) {
+        openAnswerMaskDialog(
+          dayCell.dataset.username,
+          dayCell.dataset.difficulty,
+          dayCell.dataset.period,
+          entry
+        );
+      }
+      return;
+    }
     const cell = e.target.closest('.user-cell');
-    if (cell) cell.classList.toggle('expanded');
+    if (cell) {
+      const expanded = cell.classList.toggle('expanded');
+      cell.setAttribute('aria-expanded', String(expanded));
+    }
   });
 });
+
+if (els.answerMaskDialog && els.answerMaskClose) {
+  els.answerMaskClose.addEventListener('click', () => els.answerMaskDialog.close());
+  els.answerMaskDialog.addEventListener('click', e => {
+    if (e.target === els.answerMaskDialog) els.answerMaskDialog.close();
+  });
+}
+
+document.querySelectorAll('.day-summary-header').forEach(button => {
+  button.addEventListener('click', () => {
+    openAnswerSummaryDialog(button.dataset.difficulty, button.dataset.period);
+  });
+});
+
 
 /* ===== Start ===== */
 if ('serviceWorker' in navigator) {

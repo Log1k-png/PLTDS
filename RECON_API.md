@@ -22,12 +22,20 @@ There is **no** `dev.*` (or `dev-api*`, `dev-admin*`, `www2`, etc.) subdomain �
 - `GET /` → `{"status":"ok","uptime":...}`
 - `GET /seasons` → `{"seasons":[...]}` (each with `_id`, `seasonNumber`, `name`, `dayStart`, `dayEnd`, `__v`)
 - `GET /seasons/progress`
+- `GET /info` → current day, current season, first-day date
+- `GET /public-profile/:pseudo` → canonical public username
+- `GET /public-profile/:pseudo/season-progress[/:season]` → completed daily scores and answer masks for both difficulties
+- `GET /public-profile/:pseudo/stats/:season` → public aggregate player statistics
 - `GET /leaderboards/season/:n/:difficulty` (`facile` | `difficile`)
 - `GET /search?...`
 - `GET /day-top` (daily top)
 - `GET /me`, `GET /stats/me`, `GET /game*`, `GET /seasons/current`, `GET /seasons/:n` → `401` (auth required)
 
 No auth/login endpoints exposed. Preprod DB is empty.
+
+PLTDS uses `GET /public-profile/:pseudo/season-progress/:season` as its primary per-player data
+source. It contains both difficulties' completed daily scores and `answerMask` values, making
+separate daily leaderboard requests unnecessary.
 
 ## Admin API surface (from `preprod-admin` bundle `main-EQZYCMHL.js`)
 
