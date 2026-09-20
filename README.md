@@ -17,9 +17,22 @@ The app is a static site served by a Cloudflare Pages Worker (`_worker.js`, Adva
 3. The worker whitelists the exact static files it serves (`ALLOWED_STATIC`); anything else
    returns 404. To publish a new file (e.g. a new image), add it to that list.
 
+### Data fetching
+
+- Seasonal leaderboard scores and ranks use
+  `GET /leaderboards/season/:season/:difficulty/search?q=:pseudo`.
+- Daily scores, correct-answer counts, answer masks, and chart series use one
+  `GET /public-profile/:pseudo/season-progress/:season` request per tracked player.
+- Profile histories are normalized and held in memory for the session. The same data powers
+  Auj./Hier cells, answer-detail dialogs, answer summaries, and charts.
+- This replaced per-day leaderboard-top requests and the Worker Cache API strategy. API responses
+  are `no-store`; reloading the page or using Actualiser fetches fresh profile histories.
+
 ### Files
 
-- `_worker.js` — Cloudflare Pages worker: `/api/*` proxy + static file allowlist.
+- `_worker.js` — static allowlist plus a read-only `/api/*` proxy. It permits season and leaderboard
+  routes and the exact public profile-history route required by the app; API responses are `no-store`
+  and upstream calls time out after 10 seconds.
 - `app.js` — all client logic: data fetching, caching, chart rendering, image copy.
 - `index.html` — layout and controls.
 - `style.css` — responsive styling.

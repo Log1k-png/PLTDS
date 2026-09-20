@@ -1024,10 +1024,59 @@ function initCreditsDialog() {
   });
 }
 
+function initHelpDialog() {
+  const dialog = document.getElementById('help-dialog');
+  const openBtn = document.getElementById('help-btn');
+  const closeBtn = document.getElementById('help-close-btn');
+  if (!dialog || !openBtn || !closeBtn) return;
+
+  openBtn.addEventListener('click', () => {
+    dialog.showModal();
+    closeBtn.focus();
+  });
+  closeBtn.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', e => {
+    if (e.target === dialog) dialog.close();
+  });
+}
+
+function initModalScrollLock() {
+  let locked = false;
+  let scrollY = 0;
+  const sync = () => {
+    const hasOpenDialog = document.querySelector('dialog[open]') !== null;
+    if (hasOpenDialog && !locked) {
+      locked = true;
+      scrollY = window.scrollY;
+      document.body.classList.add('modal-scroll-locked');
+      document.body.style.top = `-${scrollY}px`;
+      return;
+    }
+    if (!hasOpenDialog && locked) {
+      locked = false;
+      document.body.classList.remove('modal-scroll-locked');
+      document.body.style.top = '';
+      window.scrollTo(0, scrollY);
+    }
+  };
+
+  const observer = new MutationObserver(sync);
+  document.querySelectorAll('dialog').forEach(dialog => {
+    observer.observe(dialog, { attributes: true, attributeFilter: ['open'] });
+  });
+  sync();
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initCreditsDialog);
+  document.addEventListener('DOMContentLoaded', () => {
+    initCreditsDialog();
+    initHelpDialog();
+    initModalScrollLock();
+  });
 } else {
   initCreditsDialog();
+  initHelpDialog();
+  initModalScrollLock();
 }
 
 function createResultRow(entry, difficulty) {

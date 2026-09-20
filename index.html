@@ -89,6 +89,7 @@
 <body>
   <div class="page">
     <header class="site-header">
+      <button id="help-btn" class="header-help-btn" type="button" aria-label="Aide" aria-haspopup="dialog" title="Aide"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-2.93 2-2.93 4"/><path d="M12 17h.01"/></svg></button>
       <div class="header-inner">
         <h1>La Table des Scores</h1>
         <p class="tagline">Classement privée pour <a href="https://latabledessavoirs.fr" target="_blank" rel="noopener">La Table des Savoirs</a></p>
@@ -343,6 +344,40 @@
       </div>
       <div class="app-dialog-footer">
         <button id="credits-close-btn" class="btn primary" type="button">Fermer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="help-dialog" class="app-dialog help-dialog" aria-labelledby="help-title">
+    <div class="app-dialog-inner">
+      <div class="credits-header">
+        <h2 id="help-title">Mode d'emploi</h2>
+        <p class="credits-subtitle">Tout ce que vous pouvez faire avec votre classement.</p>
+      </div>
+      <div class="help-body">
+        <section class="help-section">
+          <h3>Ligues et saisons</h3>
+          <p>Utilisez le menu de ligue pour passer d'une liste à une autre ou en créer une. Les flèches du haut changent de saison. Le bouton Partager crée un lien vers la ligue et la saison affichées.</p>
+        </section>
+        <section class="help-section">
+          <h3>Ajouter des joueurs</h3>
+          <p>Recherchez un pseudo, puis utilisez Ajouter. Vous pouvez saisir plusieurs pseudos en les séparant par une virgule ou un retour à la ligne. <kbd>Ctrl</kbd> + <kbd>Entrée</kbd> lance la recherche.</p>
+        </section>
+        <section class="help-section">
+          <h3>Lire le classement</h3>
+          <p>Le score ouvre le profil officiel du joueur. Cliquez un pseudo pour afficher un nom long. Maintenez un pseudo appuyé pour le mettre en évidence, ou utilisez <kbd>Alt</kbd> + <kbd>Entrée</kbd> au clavier.</p>
+        </section>
+        <section class="help-section">
+          <h3>Auj. et Hier</h3>
+          <p>Cliquez une case Auj. ou Hier pour voir le détail des réponses du joueur. Cliquez l'en-tête Auj. ou Hier pour comparer les réponses de tous les joueurs ayant joué ce jour-là. Touchez une valeur du résumé pour alterner entre pourcentage et fraction.</p>
+        </section>
+        <section class="help-section">
+          <h3>Niveau Expert et graphiques</h3>
+          <p>Le niveau Expert est désactivé au départ pour limiter les requêtes. Les graphiques proposent les vues cumulée, quotidienne et moyenne, les métriques points ou bonnes réponses, et le filtre Abordable/Expert. Cliquez une légende pour masquer une courbe et survolez le graphique pour ses valeurs. Vous pouvez copier un graphique en image et exporter le CSV ou actualiser les données en cliquant sur les 3 points verticaux.</p>
+        </section>
+      </div>
+      <div class="app-dialog-footer">
+        <button id="help-close-btn" class="btn primary" type="button">Fermer</button>
       </div>
     </div>
   </dialog>

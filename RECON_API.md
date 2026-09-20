@@ -33,6 +33,10 @@ There is **no** `dev.*` (or `dev-api*`, `dev-admin*`, `www2`, etc.) subdomain â€
 
 No auth/login endpoints exposed. Preprod DB is empty.
 
+PLTDS uses `GET /public-profile/:pseudo/season-progress/:season` as its primary per-player data
+source. It contains both difficulties' completed daily scores and `answerMask` values, making
+separate daily leaderboard requests unnecessary.
+
 ## Admin API surface (from `preprod-admin` bundle `main-EQZYCMHL.js`)
 
 All auth-gated (`401` without credentials):

@@ -49,6 +49,11 @@ body {
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
 }
+body.modal-scroll-locked {
+  position: fixed;
+  width: 100%;
+  overflow: hidden;
+}
 
 a {
   color: var(--primary);
@@ -71,6 +76,37 @@ a:hover {
   text-align: center;
   padding: 2rem 1rem 1.5rem;
   border-bottom: 1px solid var(--border-dim);
+}
+.header-help-btn {
+  position: absolute;
+  top: 1rem;
+  right: max(1rem, calc((100% - 800px) / 2));
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.header-help-btn:hover,
+.header-help-btn:focus-visible {
+  border-color: rgba(42, 221, 243, 0.45);
+  background: var(--primary-dim);
+  color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(42, 221, 243, 0.1);
+}
+@media (max-width: 480px) {
+  .header-help-btn {
+    top: 0.6rem;
+    right: 0.6rem;
+    width: 32px;
+    height: 32px;
+  }
 }
 
 .header-inner {
@@ -1644,6 +1680,7 @@ textarea:focus {
   max-width: min(92vw, 32rem);
   width: 100%;
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 .app-dialog::backdrop {
   background: rgba(0, 0, 0, 0.55);
@@ -1870,6 +1907,42 @@ textarea:focus {
 .credits-body {
   padding: 1rem 1.5rem;
   overflow-y: auto;
+}
+.help-dialog {
+  max-width: min(92vw, 38rem);
+}
+.help-body {
+  max-height: min(60vh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 1.25rem 1rem;
+}
+.help-section {
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border-dim);
+}
+.help-section:last-child {
+  border-bottom: 0;
+}
+.help-section h3 {
+  margin: 0 0 0.3rem;
+  color: var(--primary);
+  font-size: 0.9rem;
+}
+.help-section p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+kbd {
+  padding: 0.05rem 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.78em;
 }
 .credits-section {
   margin-bottom: 1.25rem;

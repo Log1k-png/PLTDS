@@ -101,6 +101,16 @@ try {
     loading: document.getElementById('loading-overlay').className,
     network: document.getElementById('network-error').className
   }))()`);
+  await evaluate(`document.getElementById('help-btn').click()`);
+  const help = await evaluate(`(() => ({
+    open: document.getElementById('help-dialog').open,
+    title: document.getElementById('help-title').textContent,
+    sections: document.querySelectorAll('.help-section').length,
+    locked: document.body.classList.contains('modal-scroll-locked')
+  }))()`);
+  await evaluate(`document.getElementById('help-close-btn').click()`);
+  await sleep(20);
+  const helpClosed = await evaluate(`(() => ({ open: document.getElementById('help-dialog').open, locked: document.body.classList.contains('modal-scroll-locked') }))()`);
   await evaluate(`document.querySelector('.day-cell-btn').click()`);
   const playerDialog = await evaluate(`(() => ({ open: document.getElementById('answer-mask-dialog').open, squares: document.querySelectorAll('.answer-mask-square.mask-2').length }))()`);
   await evaluate(`document.getElementById('answer-mask-dialog').close(); document.querySelector('.day-summary-header[data-difficulty="facile"][data-period="today"]').click()`);
@@ -117,7 +127,7 @@ try {
   const expectedFractions = ['2/2', '1/2', '0/2', '0/2', '0/2', '1/2', '0/2', '0/2', '0/2', '0/2'];
   const expectedQuestions = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
   const expectedProgress = ['1', '0.5', '0', '0', '0', '0.5', '0', '0', '0', '0'];
-  const passed = before.cells === 4 && before.headers === 4 && playerDialog.open && playerDialog.squares === 2 &&
+  const passed = before.cells === 4 && before.headers === 4 && help.open && help.locked && help.title === "Mode d'emploi" && help.sections === 5 && !helpClosed.open && !helpClosed.locked && playerDialog.open && playerDialog.squares === 2 &&
     JSON.stringify(percentage.values) === JSON.stringify(expectedPercentages) &&
     JSON.stringify(percentage.questions) === JSON.stringify(expectedQuestions) &&
     JSON.stringify(percentage.progress) === JSON.stringify(expectedProgress) &&
