@@ -40,6 +40,7 @@ const CHART_TITLES = {
 };
 let profileHistories = {}; // { seasonNumber: { username: { dayNumber: { facile, difficile } } } }
 const profileHistoryLoads = new Map(); // Deduplicates concurrent profile requests per season/player.
+let profileHistoryController = new AbortController();
 let chartsVisible = false;
 let chartHidden = new Set(); // player names (or '__avg__') toggled off via legend
 let refreshPending = false; // guards against concurrent refreshAll() runs
@@ -49,6 +50,16 @@ const addingPlayers = new Set(); // ajouts en cours (evite les doubles fetches c
 let chartLoadId = 0;
 let searchLoadId = 0;
 let answerSummaryFormat = 'percentage';
+
+function resetProfileHistoryContext() {
+  profileHistoryController.abort();
+  profileHistoryController = new AbortController();
+}
+
+function setActiveSeason(season) {
+  if (activeSeason !== season) resetProfileHistoryContext();
+  activeSeason = season;
+}
 
 function loadShowExpert() {
   try {
@@ -227,6 +238,7 @@ function setActiveLeague(name) {
   if (!state || !state.leagues || !state.leagues[name]) return false;
   state.activeLeague = name;
   writeState(state);
+  if (activeLeague !== name) resetProfileHistoryContext();
   activeLeague = name;
   return true;
 }
@@ -265,6 +277,7 @@ function removeLeague(name) {
   }
   if (state.activeLeague === name || !state.leagues[state.activeLeague]) {
     state.activeLeague = remaining[0];
+    if (activeLeague !== remaining[0]) resetProfileHistoryContext();
     activeLeague = remaining[0];
   }
   writeState(state);
@@ -274,10 +287,15 @@ function removeLeague(name) {
 normalizeState();
 
 /* ===== API Helpers ===== */
-async function apiGet(path, params = {}) {
+async function apiGet(path, params = {}, signal) {
   const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', abortFromCaller, { once: true });
+  }
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
@@ -287,6 +305,7 @@ async function apiGet(path, params = {}) {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', abortFromCaller);
     if (!resp.ok) {
       if (resp.status >= 500) {
         networkDown = true;
@@ -300,7 +319,9 @@ async function apiGet(path, params = {}) {
     return resp.json();
   } catch (err) {
     clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', abortFromCaller);
     if (err.name === 'AbortError') {
+      if (signal?.aborted) throw err;
       throw new Error('Le serveur met trop de temps à répondre.');
     }
     if (err.message && err.message.includes('Failed to fetch')) {
@@ -347,8 +368,8 @@ function normalizeProfileHistoryEntry(entry) {
   };
 }
 
-async function fetchPlayerHistory(username, season) {
-  const data = await apiGet(`/public-profile/${encodeURIComponent(username)}/season-progress/${season}`);
+async function fetchPlayerHistory(username, season, signal) {
+  const data = await apiGet(`/public-profile/${encodeURIComponent(username)}/season-progress/${season}`, {}, signal);
   const history = Object.create(null);
   Object.entries(data && data.days ? data.days : {}).forEach(([day, levels]) => {
     const dayNumber = Number(day);
@@ -363,26 +384,31 @@ async function fetchPlayerHistory(username, season) {
   return history;
 }
 
-function loadPlayerHistory(username, season) {
+function loadPlayerHistory(username, season, signal = profileHistoryController.signal) {
   const seasonHistory = profileHistoryForSeason(season);
   if (Object.prototype.hasOwnProperty.call(seasonHistory, username)) {
     return Promise.resolve(seasonHistory[username]);
   }
 
+  if (signal.aborted) return Promise.reject(new DOMException('Profile history load was cancelled.', 'AbortError'));
   const key = `${season}\u0000${username}`;
-  if (!profileHistoryLoads.has(key)) {
-    const load = fetchPlayerHistory(username, season)
+  const existing = profileHistoryLoads.get(key);
+  if (!existing || existing.signal !== signal) {
+    const entry = { signal, promise: null };
+    entry.promise = fetchPlayerHistory(username, season, signal)
       .then(history => {
-        profileHistoryForSeason(season)[username] = history;
+        if (!signal.aborted) profileHistoryForSeason(season)[username] = history;
         return history;
       })
-      .finally(() => profileHistoryLoads.delete(key));
-    profileHistoryLoads.set(key, load);
+      .finally(() => {
+        if (profileHistoryLoads.get(key) === entry) profileHistoryLoads.delete(key);
+      });
+    profileHistoryLoads.set(key, entry);
   }
-  return profileHistoryLoads.get(key);
+  return profileHistoryLoads.get(key).promise;
 }
 
-async function ensureProfileHistories(season, onProgress) {
+async function ensureProfileHistories(season, onProgress, signal = profileHistoryController.signal) {
   const tracked = loadTracked();
   const seasonHistory = profileHistoryForSeason(season);
   const pending = tracked.filter(username => !Object.prototype.hasOwnProperty.call(seasonHistory, username));
@@ -391,14 +417,16 @@ async function ensureProfileHistories(season, onProgress) {
   if (onProgress && done > 0) onProgress(done, total);
 
   async function worker() {
-    while (pending.length > 0) {
+    while (pending.length > 0 && !signal.aborted) {
       const username = pending.pop();
       try {
-        await loadPlayerHistory(username, season);
+        await loadPlayerHistory(username, season, signal);
       } catch (err) {
+        if (signal.aborted || err.name === 'AbortError') return;
         // Do not cache a failed request: the next load can retry this player.
         console.warn(`Failed to load history for ${username}/${season}:`, err);
       }
+      if (signal.aborted) return;
       done++;
       if (onProgress) onProgress(done, total);
     }
@@ -439,6 +467,7 @@ async function refreshAll() {
         liveScores[activeSeason] = {};
         await fetchAllTrackedScores(activeSeason);
       }
+      resetProfileHistoryContext();
       profileHistories = {};
       profileHistoryLoads.clear();
       chartData = null;
@@ -1144,7 +1173,7 @@ function openAnswerSummaryDialog(difficulty, period) {
   const level = DISPLAY_NAMES_SHORT[difficulty] || difficulty;
   els.answerMaskDialog.classList.add('answer-summary-dialog');
   els.answerMaskTitle.textContent = `Réponses - ${label}`;
-  els.answerMaskSummary.textContent = `Niveau ${level} - Réponses correctes`;
+  els.answerMaskSummary.textContent = `Niveau ${level} - ${summary.participants} joueur${summary.participants > 1 ? 's' : ''}`;
   els.answerMaskLabel.textContent = '';
   els.answerMaskScore.textContent = '';
   els.answerMaskGrid.replaceChildren();
@@ -1611,7 +1640,7 @@ async function autoLoadFromUrl() {
   if (usernames.length === 0) return;
 
   if (seasonParam && allSeasons.some(s => s.number === seasonParam)) {
-    activeSeason = seasonParam;
+    setActiveSeason(seasonParam);
   }
 
   const incoming = usernames.filter((u, i) => usernames.indexOf(u) === i).sort();
@@ -2509,7 +2538,7 @@ function goToPrevSeason() {
   const idx = sorted.findIndex(s => s.number === activeSeason);
   if (idx > 0) {
     searchLoadId++;
-    activeSeason = sorted[idx - 1].number;
+    setActiveSeason(sorted[idx - 1].number);
     updateSeasonNav();
     renderAllTables();
     fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
@@ -2522,7 +2551,7 @@ function goToNextSeason() {
   const idx = sorted.findIndex(s => s.number === activeSeason);
   if (idx < sorted.length - 1) {
     searchLoadId++;
-    activeSeason = sorted[idx + 1].number;
+    setActiveSeason(sorted[idx + 1].number);
     updateSeasonNav();
     renderAllTables();
     fetchAllTrackedScores(activeSeason).then(() => renderAllTables());
@@ -2598,9 +2627,9 @@ async function init() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlSeason = parseInt(urlParams.get('season'), 10);
     if (urlSeason && allSeasons.some(s => s.number === urlSeason)) {
-      activeSeason = urlSeason;
+      setActiveSeason(urlSeason);
     } else {
-      activeSeason = currentSeason;
+      setActiveSeason(currentSeason);
     }
 
     updateSeasonNav();
@@ -2610,7 +2639,7 @@ async function init() {
     els.seasonDisplay.textContent = 'Saison inconnue';
     els.seasonPrev.disabled = true;
     els.seasonNext.disabled = true;
-    activeSeason = null;
+    setActiveSeason(null);
     if (networkDown) {
       els.networkError.classList.remove('hidden');
     }
