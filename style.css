@@ -903,6 +903,11 @@ tr.highlighted .user-cell {
   font-size: 0.7rem;
   opacity: 0.75;
 }
+.day-correct.day-perfect {
+  color: var(--gold);
+  opacity: 1;
+  text-shadow: 0 0 8px rgba(236, 202, 37, 0.55);
+}
 
 .day-loading {
   color: var(--text-muted);

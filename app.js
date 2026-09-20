@@ -1232,7 +1232,8 @@ function formatDayCell(entry, isToday, isLoading, username, difficulty) {
       ? `<span class="${scoreClass}">${score}</span>`
       : `<span class="${scoreClass}">${score}</span>`;
     if (entry.correctCount != null) {
-      correctLine = `<span class="day-correct">${entry.correctCount}/10</span>`;
+      const perfectClass = entry.correctCount === 10 ? ' day-perfect' : '';
+      correctLine = `<span class="day-correct${perfectClass}">${entry.correctCount}/10</span>`;
     }
   } else {
     scoreLine = '<span class="day-score">—</span>';
